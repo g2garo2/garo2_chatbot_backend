@@ -1,0 +1,15 @@
+[Unit]
+Description=Garo2 FastAPI backend
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/garo2/backend
+EnvironmentFile=/var/www/garo2/backend/.env
+ExecStart=/var/www/garo2/backend/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 3 -b 127.0.0.1:8000 app.main:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
