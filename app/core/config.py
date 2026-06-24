@@ -1,5 +1,6 @@
 import os
 from functools import cached_property
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from pydantic import Field
@@ -41,8 +42,10 @@ class Settings(BaseSettings):
 
     @cached_property
     def database_url(self) -> str:
+        quoted_user = quote_plus(self.mysql_user)
+        quoted_password = quote_plus(self.mysql_password)
         return (
-            f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}"
+            f"mysql+pymysql://{quoted_user}:{quoted_password}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
         )
 
