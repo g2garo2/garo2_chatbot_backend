@@ -1,4 +1,5 @@
 import base64
+import logging
 import mimetypes
 import os
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.models.message import Message
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+logger = logging.getLogger(__name__)
 
 
 def build_system_prompt(input_language: str, output_language: str) -> str:
@@ -78,10 +80,17 @@ def generate_ai_response(
             detail = response.json().get("error", {}).get("message", "OpenRouter request failed")
         except ValueError:
             detail = response.text or "OpenRouter request failed"
+        logger.error(
+            "OpenRouter request failed with %s for model %s: %s",
+            response.status_code,
+            resolved_model,
+            detail,
+        )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
     data = response.json()
     choices = data.get("choices") or []
     if not choices:
+        logger.error("OpenRouter returned no choices for model %s", resolved_model)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="OpenRouter returned no choices")
     return choices[0]["message"]["content"].strip()

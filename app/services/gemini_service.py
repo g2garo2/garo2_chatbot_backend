@@ -1,4 +1,5 @@
 import base64
+import logging
 import mimetypes
 import os
 from urllib.parse import urlparse
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.models.message import Message
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+logger = logging.getLogger(__name__)
 
 
 def _resolve_image_data(image_url: str) -> tuple[str, str]:
@@ -38,6 +40,7 @@ def _post_generate_content(model: str, payload: dict) -> dict:
             detail = response.json().get("error", {}).get("message", "Gemini request failed")
         except ValueError:
             detail = response.text or "Gemini request failed"
+        logger.error("Gemini request failed with %s for model %s: %s", response.status_code, model, detail)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
     return response.json()
 
@@ -49,6 +52,7 @@ def _extract_text(data: dict) -> str:
         text_chunks = [part.get("text", "") for part in parts if part.get("text")]
         if text_chunks:
             return "\n".join(text_chunks).strip()
+    logger.error("Gemini returned no text response for model output")
     raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini returned no text response")
 
 
