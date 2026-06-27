@@ -16,7 +16,8 @@ from app.schemas.chat import (
     ChatMessageRequest,
     ChatMessageResponse,
 )
-from app.services.openrouter_service import generate_ai_response
+from app.services.ai_provider_service import generate_chat_for_user
+from app.services.usage_service import enforce_chat_limit, increment_chat_usage
 
 router = APIRouter()
 
@@ -66,7 +67,9 @@ def post_message(
     if not payload.content.strip() and not payload.image_url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message text or image is required")
 
-    user_message = Message(
+    enforce_chat_limit(db, current_user)
+    prior_messages = db.query(Message).filter(Message.chat_id == chat.id).order_by(Message.created_at.asc()).all()
+    pending_user_message = Message(
         chat_id=chat.id,
         role="user",
         content=payload.content.strip() or "Please analyze this image.",
@@ -74,16 +77,15 @@ def post_message(
         input_language=payload.input_language,
         output_language=payload.output_language,
     )
-    db.add(user_message)
-    db.flush()
-
-    prior_messages = db.query(Message).filter(Message.chat_id == chat.id).order_by(Message.created_at.asc()).all()
-    ai_content = generate_ai_response(
-        messages=prior_messages,
+    ai_content = generate_chat_for_user(
+        user=current_user,
+        messages=[*prior_messages, pending_user_message],
         input_language=payload.input_language,
         output_language=payload.output_language,
     )
 
+    user_message = pending_user_message
+    db.add(user_message)
     assistant_message = Message(
         chat_id=chat.id,
         role="assistant",
@@ -94,6 +96,7 @@ def post_message(
     )
     db.add(assistant_message)
     chat.updated_at = datetime.now(timezone.utc)
+    increment_chat_usage(db, current_user)
 
     if chat.title == "New Chat":
         chat.title = (payload.content.strip() or "Image Chat")[:60]

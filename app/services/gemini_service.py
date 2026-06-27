@@ -1,0 +1,141 @@
+import base64
+import mimetypes
+import os
+from urllib.parse import urlparse
+
+import requests
+from fastapi import HTTPException, status
+
+from app.core.config import settings
+from app.models.message import Message
+
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _resolve_image_data(image_url: str) -> tuple[str, str]:
+    parsed = urlparse(image_url)
+    if parsed.path.startswith("/uploads/"):
+        filename = os.path.basename(parsed.path)
+        absolute_path = os.path.join(settings.upload_dir_path, filename)
+        mime_type = mimetypes.guess_type(absolute_path)[0] or "image/jpeg"
+        with open(absolute_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode("utf-8"), mime_type
+
+    response = requests.get(image_url, timeout=60)
+    response.raise_for_status()
+    mime_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0]
+    return base64.b64encode(response.content).decode("utf-8"), mime_type
+
+
+def _post_generate_content(model: str, payload: dict) -> dict:
+    if not settings.gemini_api_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Gemini API key is not configured")
+
+    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={settings.gemini_api_key}"
+    response = requests.post(url, json=payload, timeout=120)
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("error", {}).get("message", "Gemini request failed")
+        except ValueError:
+            detail = response.text or "Gemini request failed"
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+    return response.json()
+
+
+def _extract_text(data: dict) -> str:
+    candidates = data.get("candidates") or []
+    for candidate in candidates:
+        parts = (((candidate.get("content") or {}).get("parts")) or [])
+        text_chunks = [part.get("text", "") for part in parts if part.get("text")]
+        if text_chunks:
+            return "\n".join(text_chunks).strip()
+    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini returned no text response")
+
+
+def _extract_image(data: dict) -> tuple[str | None, str | None, str | None]:
+    candidates = data.get("candidates") or []
+    text_chunks: list[str] = []
+    for candidate in candidates:
+        parts = (((candidate.get("content") or {}).get("parts")) or [])
+        for part in parts:
+            if part.get("text"):
+                text_chunks.append(part["text"])
+            inline_data = part.get("inlineData") or part.get("inline_data")
+            if inline_data and inline_data.get("data"):
+                return (
+                    inline_data.get("data"),
+                    inline_data.get("mimeType") or inline_data.get("mime_type"),
+                    "\n".join(text_chunks).strip() or None,
+                )
+    return None, None, "\n".join(text_chunks).strip() or None
+
+
+def build_chat_prompt(input_language: str, output_language: str) -> str:
+    return (
+        "You are Garo2, a helpful multilingual AI assistant. "
+        f"The user input language is {input_language}. "
+        f"Always respond in {output_language}. "
+        "If the output language is Garo, answer naturally in Garo. "
+        "If the output language is English, answer naturally in English. "
+        "Understand both English and Garo inputs."
+    )
+
+
+def generate_chat_response(messages: list[Message], input_language: str, output_language: str) -> str:
+    contents = [{"role": "user", "parts": [{"text": build_chat_prompt(input_language, output_language)}]}]
+    for message in messages:
+        parts: list[dict] = [{"text": message.content}]
+        if message.image_url:
+            image_data, mime_type = _resolve_image_data(message.image_url)
+            parts.append({"inline_data": {"mime_type": mime_type, "data": image_data}})
+        contents.append({"role": "model" if message.role == "assistant" else "user", "parts": parts})
+
+    data = _post_generate_content(settings.gemini_text_model, {"contents": contents})
+    return _extract_text(data)
+
+
+def translate_text(text: str, source_language: str, target_language: str) -> str:
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            f"Translate the following text from {source_language} to {target_language}. "
+                            "Return only the translated text.\n\n"
+                            f"{text}"
+                        )
+                    }
+                ],
+            }
+        ]
+    }
+    data = _post_generate_content(settings.gemini_text_model, payload)
+    return _extract_text(data)
+
+
+def analyze_image(image_url: str, prompt: str, output_language: str) -> str:
+    image_data, mime_type = _resolve_image_data(image_url)
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": f"{prompt}\nRespond in {output_language}."},
+                    {"inline_data": {"mime_type": mime_type, "data": image_data}},
+                ],
+            }
+        ]
+    }
+    data = _post_generate_content(settings.gemini_image_model, payload)
+    return _extract_text(data)
+
+
+def generate_image(prompt: str) -> tuple[str | None, str | None, str | None]:
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }
+    data = _post_generate_content(settings.gemini_image_model, payload)
+    return _extract_image(data)

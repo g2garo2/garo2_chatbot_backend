@@ -7,6 +7,7 @@ from jose import jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.plans import FREE_PLAN
 from app.models.user import User
 from app.schemas.auth import AuthResponse
 
@@ -34,6 +35,8 @@ def login_with_google(db: Session, credential: str) -> AuthResponse:
             name=token_info.get("name", email.split("@")[0]),
             email=email,
             avatar=token_info.get("picture"),
+            plan=FREE_PLAN,
+            subscription_status="free",
         )
         db.add(user)
         db.commit()

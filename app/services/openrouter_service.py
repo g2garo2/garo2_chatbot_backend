@@ -53,11 +53,16 @@ def resolve_image_payload(image_url: str) -> str:
     return image_url
 
 
-def generate_ai_response(messages: list[Message], input_language: str, output_language: str) -> str:
+def generate_ai_response(
+    messages: list[Message],
+    input_language: str,
+    output_language: str,
+    model: str | None = None,
+) -> str:
     has_image = any(message.image_url for message in messages)
-    model = settings.openrouter_vision_model if has_image else settings.openrouter_text_model
+    resolved_model = model or (settings.openrouter_vision_model if has_image else settings.openrouter_text_model)
     payload = {
-        "model": model,
+        "model": resolved_model,
         "messages": serialize_messages(messages, input_language, output_language),
     }
     headers = {
