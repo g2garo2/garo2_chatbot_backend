@@ -23,6 +23,11 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
+
+@app.get("/", tags=["Root"])
+def root() -> dict[str, str]:
+    return {"message": "Garo2 backend is running", "health": f"{settings.api_v1_prefix}/health"}
+
 app.include_router(health.router, prefix=settings.api_v1_prefix, tags=["Health"])
 app.include_router(auth.router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Auth"])
 app.include_router(chat.router, prefix=f"{settings.api_v1_prefix}/chat", tags=["Chat"])
