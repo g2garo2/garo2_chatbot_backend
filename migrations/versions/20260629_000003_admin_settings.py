@@ -19,7 +19,7 @@ def upgrade() -> None:
     op.create_table(
         "app_settings",
         sa.Column("key", sa.String(length=100), nullable=False),
-        sa.Column("value", sa.Text(), nullable=False, server_default=""),
+        sa.Column("value", sa.Text(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("key"),
     )
