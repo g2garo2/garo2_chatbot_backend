@@ -223,7 +223,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
   <div class="shell">
     <section class="hero">
       <h1>Garo2 Admin Dashboard</h1>
-      <p>Manage the chatbot's default instruction prompt, monitor website activity, and export live backend data as CSV.</p>
+      <p>Manage the Meghalaya starter suggestions, monitor website activity, and export live backend data as CSV.</p>
       <p class="note">This page is served by the backend and reads directly from the production database tables.</p>
     </section>
 
@@ -231,11 +231,11 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
 
     <section class="two-col">
       <div class="panel">
-        <h2>Default Chat Prompt</h2>
-        <p class="muted">Manage the built-in instruction used for founder and identity related chatbot answers.</p>
-        <textarea id="prompt-input" placeholder="Loading default prompt..."></textarea>
+        <h2>Suggested Chat Prompts</h2>
+        <p class="muted">Manage the Meghalaya starter prompts shown above the chat input on small devices.</p>
+        <div id="prompt-suggestion-fields" class="prompt-suggestion-fields"></div>
         <div class="actions" style="margin-top: 14px;">
-          <button class="primary" id="save-prompt">Save Prompt</button>
+          <button class="primary" id="save-prompt">Save Prompts</button>
           <button id="reload-prompt">Reload</button>
         </div>
         <p class="status" id="prompt-status"></p>
@@ -280,7 +280,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
 
   <script>
     const overviewGrid = document.getElementById("overview-grid");
-    const promptInput = document.getElementById("prompt-input");
+    const promptSuggestionFields = document.getElementById("prompt-suggestion-fields");
     const promptStatus = document.getElementById("prompt-status");
     const savePromptButton = document.getElementById("save-prompt");
     const reloadPromptButton = document.getElementById("reload-prompt");
@@ -336,32 +336,48 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       `).join("") || `<p class="muted">No data yet.</p>`;
     }
 
+    function renderPromptFields(prompts) {
+      promptSuggestionFields.innerHTML = prompts.map((prompt, index) => `
+        <div class="prompt-suggestion-field">
+          <label for="prompt-suggestion-${index}">Prompt ${index + 1}</label>
+          <textarea id="prompt-suggestion-${index}" data-prompt-index="${index}">${escapeHtml(prompt)}</textarea>
+        </div>
+      `).join("");
+    }
+
+    function readPromptFields() {
+      return Array.from(promptSuggestionFields.querySelectorAll("textarea"))
+        .map((field) => field.value.trim())
+        .filter(Boolean);
+    }
+
     async function loadPrompt() {
-      const response = await fetch("/api/admin/default-prompt");
+      const response = await fetch("/api/admin/prompt-suggestions");
       if (!response.ok) {
-        throw new Error("Could not load the default prompt.");
+        throw new Error("Could not load the suggested prompts.");
       }
       const data = await response.json();
-      promptInput.value = data.prompt || "";
-      promptStatus.textContent = data.updated_at ? `Last updated: ${formatDate(data.updated_at)}` : "Using fallback default prompt.";
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = data.updated_at ? `Last updated: ${formatDate(data.updated_at)}` : "Using default Meghalaya prompts.";
       promptStatus.className = "status";
     }
 
     async function savePrompt() {
-      promptStatus.textContent = "Saving prompt...";
+      const prompts = readPromptFields();
+      promptStatus.textContent = "Saving prompts...";
       promptStatus.className = "status";
-      const response = await fetch("/api/admin/default-prompt", {
+      const response = await fetch("/api/admin/prompt-suggestions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptInput.value }),
+        body: JSON.stringify({ prompts }),
       });
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: "Could not save the prompt." }));
-        throw new Error(error.detail || "Could not save the prompt.");
+        const error = await response.json().catch(() => ({ detail: "Could not save the prompts." }));
+        throw new Error(error.detail || "Could not save the prompts.");
       }
       const data = await response.json();
-      promptInput.value = data.prompt || "";
-      promptStatus.textContent = `Prompt saved at ${formatDate(data.updated_at)}.`;
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = `Prompts saved at ${formatDate(data.updated_at)}.`;
       promptStatus.className = "status";
     }
 
@@ -426,7 +442,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       try {
         await savePrompt();
       } catch (error) {
-        promptStatus.textContent = error.message || "Could not save the prompt.";
+        promptStatus.textContent = error.message || "Could not save the prompts.";
         promptStatus.className = "status error";
       }
     });
@@ -435,7 +451,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       try {
         await loadPrompt();
       } catch (error) {
-        promptStatus.textContent = error.message || "Could not reload the prompt.";
+        promptStatus.textContent = error.message || "Could not reload the prompts.";
         promptStatus.className = "status error";
       }
     });
