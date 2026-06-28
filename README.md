@@ -60,6 +60,7 @@ GET http://127.0.0.1:8000/
 - `POST /api/upload/image`
 - `GET /api/health`
 - `GET /admin`
+- `GET /api/admin`
 - `GET /api/admin/dashboard`
 - `GET /api/admin/default-prompt`
 - `PUT /api/admin/default-prompt`
@@ -68,6 +69,7 @@ GET http://127.0.0.1:8000/
 ## 5A. Admin dashboard
 
 - Open `http://127.0.0.1:8000/admin`
+- In production behind the same `/api` proxy, open `https://your-domain/api/admin`
 - Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` from `backend/.env`
 - The admin page shows website metrics, recent users/chats, plan and language breakdowns
 - CSV exports are available for `users`, `chats`, `messages`, `payments`, `usage-daily`, and `usage-monthly`

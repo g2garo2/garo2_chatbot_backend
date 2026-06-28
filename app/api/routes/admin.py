@@ -474,6 +474,7 @@ def _csv_response(filename: str, header: list[str], rows: list[list[object]]) ->
 
 
 @router.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/api/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_page(_: str = Depends(get_admin_credentials)) -> HTMLResponse:
     return HTMLResponse(ADMIN_PAGE_HTML)
 
