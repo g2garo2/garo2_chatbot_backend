@@ -14,9 +14,9 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 logger = logging.getLogger(__name__)
 
 
-def build_system_prompt(input_language: str, output_language: str) -> str:
+def build_system_prompt(input_language: str, output_language: str, default_prompt: str = "") -> str:
     language_hint = input_language if input_language and input_language != "auto" else "unknown"
-    return (
+    base_prompt = (
         "You are Garo2, a careful multilingual AI assistant for English and Garo. "
         f"The client-provided input language hint is {language_hint}. "
         "Do not blindly trust that hint. Detect the actual user language from the message content. "
@@ -28,10 +28,14 @@ def build_system_prompt(input_language: str, output_language: str) -> str:
         "Preserve names, numbers, dates, and factual details accurately. "
         "If you are unsure about a Garo phrasing, choose simple natural wording and avoid inventing facts."
     )
+    custom_prompt = default_prompt.strip()
+    if custom_prompt:
+        base_prompt = f"{base_prompt}\n\nAdditional admin instructions:\n{custom_prompt}"
+    return base_prompt
 
 
-def serialize_messages(messages: list[Message], input_language: str, output_language: str) -> list[dict]:
-    serialized: list[dict] = [{"role": "system", "content": build_system_prompt(input_language, output_language)}]
+def serialize_messages(messages: list[Message], input_language: str, output_language: str, default_prompt: str = "") -> list[dict]:
+    serialized: list[dict] = [{"role": "system", "content": build_system_prompt(input_language, output_language, default_prompt)}]
     for message in messages:
         if message.image_url:
             serialized.append(
@@ -65,12 +69,13 @@ def generate_ai_response(
     input_language: str,
     output_language: str,
     model: str | None = None,
+    default_prompt: str = "",
 ) -> str:
     has_image = any(message.image_url for message in messages)
     resolved_model = model or (settings.openrouter_vision_model if has_image else settings.openrouter_text_model)
     payload = {
         "model": resolved_model,
-        "messages": serialize_messages(messages, input_language, output_language),
+        "messages": serialize_messages(messages, input_language, output_language, default_prompt),
     }
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",

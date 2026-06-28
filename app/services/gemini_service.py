@@ -74,9 +74,9 @@ def _extract_image(data: dict) -> tuple[str | None, str | None, str | None]:
     return None, None, "\n".join(text_chunks).strip() or None
 
 
-def build_chat_prompt(input_language: str, output_language: str) -> str:
+def build_chat_prompt(input_language: str, output_language: str, default_prompt: str = "") -> str:
     language_hint = input_language if input_language and input_language != "auto" else "unknown"
-    return (
+    base_prompt = (
         "You are Garo2, a careful multilingual AI assistant for English and Garo. "
         f"The client-provided input language hint is {language_hint}. "
         "Do not blindly trust that hint. Detect the actual user language from the message content. "
@@ -88,10 +88,14 @@ def build_chat_prompt(input_language: str, output_language: str) -> str:
         "Preserve names, numbers, dates, and factual details accurately. "
         "If you are unsure about a Garo phrasing, choose simple natural wording and avoid inventing facts."
     )
+    custom_prompt = default_prompt.strip()
+    if custom_prompt:
+        base_prompt = f"{base_prompt}\n\nAdditional admin instructions:\n{custom_prompt}"
+    return base_prompt
 
 
-def generate_chat_response(messages: list[Message], input_language: str, output_language: str) -> str:
-    contents = [{"role": "user", "parts": [{"text": build_chat_prompt(input_language, output_language)}]}]
+def generate_chat_response(messages: list[Message], input_language: str, output_language: str, default_prompt: str = "") -> str:
+    contents = [{"role": "user", "parts": [{"text": build_chat_prompt(input_language, output_language, default_prompt)}]}]
     for message in messages:
         parts: list[dict] = [{"text": message.content}]
         if message.image_url:

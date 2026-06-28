@@ -17,6 +17,7 @@ from app.schemas.chat import (
     ChatMessageResponse,
 )
 from app.services.ai_provider_service import generate_chat_for_user
+from app.services.prompt_settings_service import get_default_prompt_text
 from app.services.usage_service import enforce_chat_limit, increment_chat_usage
 
 router = APIRouter()
@@ -69,6 +70,7 @@ def post_message(
 
     enforce_chat_limit(db, current_user)
     prior_messages = db.query(Message).filter(Message.chat_id == chat.id).order_by(Message.created_at.asc()).all()
+    default_prompt = get_default_prompt_text(db)
     pending_user_message = Message(
         chat_id=chat.id,
         role="user",
@@ -82,6 +84,7 @@ def post_message(
         messages=[*prior_messages, pending_user_message],
         input_language=payload.input_language,
         output_language=payload.output_language,
+        default_prompt=default_prompt,
     )
 
     user_message = pending_user_message

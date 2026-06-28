@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     api_v1_prefix: str = Field(default="/api", alias="API_V1_PREFIX")
     secret_key: str = Field(alias="SECRET_KEY")
     access_token_expire_minutes: int = Field(default=10080, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="change-me-now", alias="ADMIN_PASSWORD")
 
     mysql_host: str = Field(alias="MYSQL_HOST")
     mysql_port: int = Field(default=3306, alias="MYSQL_PORT")

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, billing, chat, health, image, me, payments, translate, upload, webhooks
+from app.api.routes import admin, auth, billing, chat, health, image, me, payments, translate, upload, webhooks
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 
@@ -38,5 +38,6 @@ app.include_router(billing.router, prefix=f"{settings.api_v1_prefix}/billing", t
 app.include_router(payments.router, prefix=settings.api_v1_prefix, tags=["Payments"])
 app.include_router(webhooks.router, prefix=f"{settings.api_v1_prefix}/webhooks", tags=["Webhooks"])
 app.include_router(upload.router, prefix=f"{settings.api_v1_prefix}/upload", tags=["Upload"])
+app.include_router(admin.router)
 
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir_path), name="uploads")

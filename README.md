@@ -59,6 +59,19 @@ GET http://127.0.0.1:8000/
 - `DELETE /api/chat/{chat_id}`
 - `POST /api/upload/image`
 - `GET /api/health`
+- `GET /admin`
+- `GET /api/admin/dashboard`
+- `GET /api/admin/default-prompt`
+- `PUT /api/admin/default-prompt`
+- `GET /api/admin/exports/{dataset}`
+
+## 5A. Admin dashboard
+
+- Open `http://127.0.0.1:8000/admin`
+- Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` from `backend/.env`
+- The admin page shows website metrics, recent users/chats, plan and language breakdowns
+- CSV exports are available for `users`, `chats`, `messages`, `payments`, `usage-daily`, and `usage-monthly`
+- The default prompt editor updates the backend chat prompt that is appended to Garo2's built-in language rules
 
 ## 6. Hostinger VPS deployment
 
@@ -96,6 +109,7 @@ VITE_RAZORPAY_KEY_ID=your-razorpay-key-id
 ## 7. Notes
 
 - Keep `OPENROUTER_API_KEY` only in backend `.env`.
+- Change the default `ADMIN_USERNAME` and `ADMIN_PASSWORD` before production use.
 - Set `CORS_ORIGINS` to your frontend domains.
 - Uploaded images are served from `/uploads`.
 - If the frontend reports `User not found`, clear the stale `garo2_token` in browser local storage and sign in again.

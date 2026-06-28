@@ -6,7 +6,13 @@ from app.services.gemini_service import analyze_image, generate_chat_response, g
 from app.services.openrouter_service import generate_ai_response
 
 
-def generate_chat_for_user(user: User, messages: list[Message], input_language: str, output_language: str) -> str:
+def generate_chat_for_user(
+    user: User,
+    messages: list[Message],
+    input_language: str,
+    output_language: str,
+    default_prompt: str = "",
+) -> str:
     plan = get_plan_config(user.plan)
     has_image = any(message.image_url for message in messages)
     if plan.key == FREE_PLAN and not has_image:
@@ -15,8 +21,14 @@ def generate_chat_for_user(user: User, messages: list[Message], input_language: 
             input_language=input_language,
             output_language=output_language,
             model=settings.openrouter_free_model,
+            default_prompt=default_prompt,
         )
-    return generate_chat_response(messages=messages, input_language=input_language, output_language=output_language)
+    return generate_chat_response(
+        messages=messages,
+        input_language=input_language,
+        output_language=output_language,
+        default_prompt=default_prompt,
+    )
 
 
 def translate_for_user(user: User, text: str, source_language: str, target_language: str) -> str:
