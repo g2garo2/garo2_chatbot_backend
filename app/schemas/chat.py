@@ -45,3 +45,7 @@ class ChatMessageResponse(BaseModel):
     user_message: MessageResponse
     assistant_message: MessageResponse
     chat: ChatHistoryItem
+
+
+class PromptSuggestionsResponse(BaseModel):
+    prompts: list[str] = Field(default_factory=list)

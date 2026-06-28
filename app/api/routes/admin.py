@@ -17,8 +17,20 @@ from app.models.payment import Payment
 from app.models.usage_daily import UsageDaily
 from app.models.usage_monthly import UsageMonthly
 from app.models.user import User
-from app.schemas.admin import DefaultPromptResponse, DefaultPromptUpdateRequest
-from app.services.prompt_settings_service import get_default_prompt_setting, get_default_prompt_text, upsert_default_prompt
+from app.schemas.admin import (
+    DefaultPromptResponse,
+    DefaultPromptUpdateRequest,
+    PromptSuggestionsResponse,
+    PromptSuggestionsUpdateRequest,
+)
+from app.services.prompt_settings_service import (
+    get_default_prompt_setting,
+    get_default_prompt_text,
+    get_prompt_suggestions,
+    get_prompt_suggestions_setting,
+    upsert_default_prompt,
+    upsert_prompt_suggestions,
+)
 
 router = APIRouter()
 security = HTTPBasic()
@@ -120,6 +132,21 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       font: inherit;
       line-height: 1.6;
     }
+    .prompt-suggestion-fields {
+      display: grid;
+      gap: 12px;
+    }
+    .prompt-suggestion-field {
+      display: grid;
+      gap: 8px;
+    }
+    .prompt-suggestion-field label {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .prompt-suggestion-field textarea {
+      min-height: 112px;
+    }
     .actions, .csv-list {
       display: flex;
       flex-wrap: wrap;
@@ -196,7 +223,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
   <div class="shell">
     <section class="hero">
       <h1>Garo2 Admin Dashboard</h1>
-      <p>Manage the default chat prompt, monitor website activity, and export live backend data as CSV.</p>
+      <p>Manage the suggested Meghalaya chat prompts, monitor website activity, and export live backend data as CSV.</p>
       <p class="note">This page is served by the backend and reads directly from the production database tables.</p>
     </section>
 
@@ -204,11 +231,11 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
 
     <section class="two-col">
       <div class="panel">
-        <h2>Default Chat Prompt</h2>
-        <p class="muted">This prompt is appended after Garo2's built-in language and accuracy rules for chat replies.</p>
-        <textarea id="prompt-input" placeholder="Loading prompt..."></textarea>
+        <h2>Suggested Chat Prompts</h2>
+        <p class="muted">Manage the Meghalaya starter prompts shown above the chat input on small devices.</p>
+        <div id="prompt-suggestion-fields" class="prompt-suggestion-fields"></div>
         <div class="actions" style="margin-top: 14px;">
-          <button class="primary" id="save-prompt">Save Prompt</button>
+          <button class="primary" id="save-prompt">Save Prompts</button>
           <button id="reload-prompt">Reload</button>
         </div>
         <p class="status" id="prompt-status"></p>
@@ -249,18 +276,11 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       </div>
     </section>
 
-    <section class="panel table-wrap">
-      <h2>Daily Activity (Last 14 Days)</h2>
-      <table>
-        <thead><tr><th>Date</th><th>New Users</th><th>Chats</th><th>User Messages</th><th>Assistant Messages</th><th>Translations</th></tr></thead>
-        <tbody id="daily-activity"></tbody>
-      </table>
-    </section>
   </div>
 
   <script>
     const overviewGrid = document.getElementById("overview-grid");
-    const promptInput = document.getElementById("prompt-input");
+    const promptSuggestionFields = document.getElementById("prompt-suggestion-fields");
     const promptStatus = document.getElementById("prompt-status");
     const savePromptButton = document.getElementById("save-prompt");
     const reloadPromptButton = document.getElementById("reload-prompt");
@@ -268,7 +288,6 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     const languageChart = document.getElementById("language-chart");
     const recentUsers = document.getElementById("recent-users");
     const recentChats = document.getElementById("recent-chats");
-    const dailyActivity = document.getElementById("daily-activity");
     const csvLinks = document.getElementById("csv-links");
 
     const csvDatasets = [
@@ -317,32 +336,48 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       `).join("") || `<p class="muted">No data yet.</p>`;
     }
 
+    function renderPromptFields(prompts) {
+      promptSuggestionFields.innerHTML = prompts.map((prompt, index) => `
+        <div class="prompt-suggestion-field">
+          <label for="prompt-suggestion-${index}">Prompt ${index + 1}</label>
+          <textarea id="prompt-suggestion-${index}" data-prompt-index="${index}">${escapeHtml(prompt)}</textarea>
+        </div>
+      `).join("");
+    }
+
+    function readPromptFields() {
+      return Array.from(promptSuggestionFields.querySelectorAll("textarea"))
+        .map((field) => field.value.trim())
+        .filter(Boolean);
+    }
+
     async function loadPrompt() {
-      const response = await fetch("/api/admin/default-prompt");
+      const response = await fetch("/api/admin/prompt-suggestions");
       if (!response.ok) {
-        throw new Error("Could not load the default prompt.");
+        throw new Error("Could not load the suggested prompts.");
       }
       const data = await response.json();
-      promptInput.value = data.prompt || "";
-      promptStatus.textContent = data.updated_at ? `Last updated: ${formatDate(data.updated_at)}` : "Using default prompt.";
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = data.updated_at ? `Last updated: ${formatDate(data.updated_at)}` : "Using default Meghalaya prompts.";
       promptStatus.className = "status";
     }
 
     async function savePrompt() {
-      promptStatus.textContent = "Saving prompt...";
+      const prompts = readPromptFields();
+      promptStatus.textContent = "Saving prompts...";
       promptStatus.className = "status";
-      const response = await fetch("/api/admin/default-prompt", {
+      const response = await fetch("/api/admin/prompt-suggestions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptInput.value }),
+        body: JSON.stringify({ prompts }),
       });
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: "Could not save the prompt." }));
-        throw new Error(error.detail || "Could not save the prompt.");
+        const error = await response.json().catch(() => ({ detail: "Could not save the prompts." }));
+        throw new Error(error.detail || "Could not save the prompts.");
       }
       const data = await response.json();
-      promptInput.value = data.prompt || "";
-      promptStatus.textContent = `Prompt saved at ${formatDate(data.updated_at)}.`;
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = `Prompts saved at ${formatDate(data.updated_at)}.`;
       promptStatus.className = "status";
     }
 
@@ -358,10 +393,10 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         renderMetricCard("Total Chats", data.overview.total_chats, "Conversation threads"),
         renderMetricCard("Total Messages", data.overview.total_messages, "User + assistant messages"),
         renderMetricCard("Revenue (INR)", data.overview.total_revenue_inr, "Captured or successful payments"),
-        renderMetricCard("Active Users (7d)", data.overview.active_users_last_7_days, "Users with recent messages"),
-        renderMetricCard("User Messages (7d)", data.overview.user_messages_last_7_days, "Recent inbound prompts"),
+        renderMetricCard("Active Users", data.overview.active_users_last_7_days, "Users with recent messages"),
+        renderMetricCard("User Messages", data.overview.user_messages_last_7_days, "Recent inbound prompts"),
         renderMetricCard("Translations Today", data.overview.translations_today, "From usage tracking"),
-        renderMetricCard("New Users (30d)", data.overview.new_users_last_30_days, "Recent signups"),
+        renderMetricCard("New Users", data.overview.new_users_last_30_days, "Recent signups"),
       ].join("");
 
       renderBarChart(planChart, data.plan_breakdown);
@@ -385,16 +420,6 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         </tr>
       `).join("") || `<tr><td colspan="4" class="muted">No chats yet.</td></tr>`;
 
-      dailyActivity.innerHTML = data.daily_activity.map((day) => `
-        <tr>
-          <td>${escapeHtml(day.date)}</td>
-          <td>${escapeHtml(day.new_users)}</td>
-          <td>${escapeHtml(day.chats_created)}</td>
-          <td>${escapeHtml(day.user_messages)}</td>
-          <td>${escapeHtml(day.assistant_messages)}</td>
-          <td>${escapeHtml(day.translations)}</td>
-        </tr>
-      `).join("") || `<tr><td colspan="6" class="muted">No daily activity data yet.</td></tr>`;
     }
 
     function renderCsvLinks() {
@@ -417,7 +442,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       try {
         await savePrompt();
       } catch (error) {
-        promptStatus.textContent = error.message || "Could not save the prompt.";
+        promptStatus.textContent = error.message || "Could not save the prompts.";
         promptStatus.className = "status error";
       }
     });
@@ -426,7 +451,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       try {
         await loadPrompt();
       } catch (error) {
-        promptStatus.textContent = error.message || "Could not reload the prompt.";
+        promptStatus.textContent = error.message || "Could not reload the prompts.";
         promptStatus.className = "status error";
       }
     });
@@ -497,6 +522,31 @@ def update_default_prompt(
 ) -> DefaultPromptResponse:
     setting = upsert_default_prompt(db, payload.prompt)
     return DefaultPromptResponse(prompt=setting.value, updated_at=_to_iso(setting.updated_at))
+
+
+@router.get("/api/admin/prompt-suggestions", response_model=PromptSuggestionsResponse, tags=["Admin"])
+def get_admin_prompt_suggestions(
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> PromptSuggestionsResponse:
+    setting = get_prompt_suggestions_setting(db)
+    return PromptSuggestionsResponse(
+        prompts=get_prompt_suggestions(db),
+        updated_at=_to_iso(setting.updated_at) if setting else None,
+    )
+
+
+@router.put("/api/admin/prompt-suggestions", response_model=PromptSuggestionsResponse, tags=["Admin"])
+def update_admin_prompt_suggestions(
+    payload: PromptSuggestionsUpdateRequest,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> PromptSuggestionsResponse:
+    setting = upsert_prompt_suggestions(db, payload.prompts)
+    return PromptSuggestionsResponse(
+        prompts=get_prompt_suggestions(db),
+        updated_at=_to_iso(setting.updated_at),
+    )
 
 
 @router.get("/api/admin/dashboard", tags=["Admin"])

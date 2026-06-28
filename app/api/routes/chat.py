@@ -15,12 +15,22 @@ from app.schemas.chat import (
     ChatHistoryItem,
     ChatMessageRequest,
     ChatMessageResponse,
+    PromptSuggestionsResponse,
 )
 from app.services.ai_provider_service import generate_chat_for_user
-from app.services.prompt_settings_service import get_default_prompt_text
+from app.services.prompt_settings_service import get_default_prompt_text, get_prompt_suggestions
 from app.services.usage_service import enforce_chat_limit, increment_chat_usage
 
 router = APIRouter()
+
+
+@router.get("/prompt-suggestions", response_model=PromptSuggestionsResponse)
+def get_chat_prompt_suggestions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PromptSuggestionsResponse:
+    _ = current_user
+    return PromptSuggestionsResponse(prompts=get_prompt_suggestions(db))
 
 
 @router.post("/new", response_model=ChatHistoryItem)
