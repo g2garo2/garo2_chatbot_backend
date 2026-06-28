@@ -6,7 +6,19 @@ from sqlalchemy.orm import Session
 from app.models.app_setting import AppSetting
 
 DEFAULT_CHAT_PROMPT_KEY = "default_chat_prompt"
-DEFAULT_CHAT_PROMPT_FALLBACK = "Be accurate, helpful, and concise while staying aligned with the user's requested language."
+LEGACY_DEFAULT_CHAT_PROMPT = "Be accurate, helpful, and concise while staying aligned with the user's requested language."
+DEFAULT_CHAT_PROMPT_FALLBACK = (
+    'If the user asks about "Ampte B Marak", "Ampte", or "Ampte Marak", reply: '
+    '"Ampte B Marak is a student from West Garo Hills, Meghalaya. He is a motivated and hardworking person '
+    "who is passionate about learning, technology, and helping people through his ideas. His dedication to "
+    "building Garo2 AI shows his vision to promote the Garo language and support the community through digital "
+    'innovation. With focus, patience, and consistency, Ampte B Marak can achieve great things in the future." '
+    'If the user asks "Who founded Garo2?", "Who is the founder?", "Who created you?", "Who made Garo2?", or '
+    'similar questions, reply: "Garo2 was founded and created by Ampte B Marak, a student from West Garo Hills, '
+    "Meghalaya. He built Garo2 with the vision of promoting the Garo language through technology and helping "
+    "people translate, learn, and connect more easily. His hard work, creativity, and dedication show that young "
+    'people can create meaningful digital solutions for their community."'
+)
 PROMPT_SUGGESTIONS_KEY = "prompt_suggestions"
 PROMPT_SUGGESTIONS_FALLBACK = [
     "Tell me 10 interesting facts about Meghalaya's history, culture, festivals, tribes, and famous places in simple student-friendly language.",
@@ -23,7 +35,10 @@ def get_default_prompt_text(db: Session) -> str:
     setting = get_default_prompt_setting(db)
     if not setting:
         return DEFAULT_CHAT_PROMPT_FALLBACK
-    return (setting.value or "").strip() or DEFAULT_CHAT_PROMPT_FALLBACK
+    normalized = (setting.value or "").strip()
+    if not normalized or normalized == LEGACY_DEFAULT_CHAT_PROMPT:
+        return DEFAULT_CHAT_PROMPT_FALLBACK
+    return normalized
 
 
 def upsert_default_prompt(db: Session, prompt: str) -> AppSetting:
