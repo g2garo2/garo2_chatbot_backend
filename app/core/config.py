@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
     openrouter_site_url: str = Field(default="https://garo2.com", alias="OPENROUTER_SITE_URL")
     openrouter_site_name: str = Field(default="Garo2", alias="OPENROUTER_SITE_NAME")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_text_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_TEXT_MODEL")
+    gemini_text_model: str = Field(default="gemini-3.5-flash", alias="GEMINI_TEXT_MODEL")
     gemini_image_model: str = Field(default="gemini-2.5-flash-image-preview", alias="GEMINI_IMAGE_MODEL")
     razorpay_key_id: str = Field(default="", alias="RAZORPAY_KEY_ID")
     razorpay_key_secret: str = Field(default="", alias="RAZORPAY_KEY_SECRET")
@@ -49,6 +50,24 @@ class Settings(BaseSettings):
     cors_origins_raw: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
 
     jwt_algorithm: str = "HS256"
+
+    @field_validator(
+        "openrouter_text_model",
+        "openrouter_free_model",
+        "openrouter_vision_model",
+        "gemini_text_model",
+        "gemini_image_model",
+        mode="before",
+    )
+    @classmethod
+    def normalize_model_name(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {'"', "'"}:
+            normalized = normalized[1:-1].strip()
+        return normalized
 
     @cached_property
     def database_url(self) -> str:
