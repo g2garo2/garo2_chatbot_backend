@@ -6,12 +6,13 @@ from datetime import date, datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.plans import FREE_PLAN, get_plan_config
+from app.core.plans import FREE_PLAN
 from app.models.message import Message
 from app.models.usage_daily import UsageDaily
 from app.models.usage_monthly import UsageMonthly
 from app.models.user import User
 from app.schemas.usage import UsageLimitView, UsageResponse
+from app.services.plan_service import resolve_plan
 
 UPGRADE_LIMIT_MESSAGE = "You have reached your limit for this plan. Upgrade your plan to continue."
 
@@ -65,7 +66,7 @@ def _raise_limit(feature: str) -> None:
 
 
 def enforce_chat_limit(db: Session, user: User) -> None:
-    plan = get_plan_config(user.plan)
+    plan = resolve_plan(db, user.plan)
     snapshot = get_usage_snapshot(db, user)
     if plan.chat_daily_limit is not None and snapshot.daily.chat_count >= plan.chat_daily_limit:
         _raise_limit("chat")
@@ -91,21 +92,21 @@ def enforce_chat_limit(db: Session, user: User) -> None:
 
 
 def enforce_translation_limit(db: Session, user: User) -> None:
-    plan = get_plan_config(user.plan)
+    plan = resolve_plan(db, user.plan)
     snapshot = get_usage_snapshot(db, user)
     if snapshot.daily.translation_count >= plan.translation_daily_limit:
         _raise_limit("translation")
 
 
 def enforce_image_upload_limit(db: Session, user: User) -> None:
-    plan = get_plan_config(user.plan)
+    plan = resolve_plan(db, user.plan)
     snapshot = get_usage_snapshot(db, user)
     if snapshot.daily.image_upload_count >= plan.image_upload_daily_limit:
         _raise_limit("image_upload")
 
 
 def enforce_image_generation_limit(db: Session, user: User) -> None:
-    plan = get_plan_config(user.plan)
+    plan = resolve_plan(db, user.plan)
     snapshot = get_usage_snapshot(db, user)
     if snapshot.monthly.image_generation_count >= plan.image_generation_monthly_limit:
         _raise_limit("image_generation")
@@ -136,7 +137,7 @@ def increment_image_generation_usage(db: Session, user: User) -> None:
 
 
 def build_usage_response(db: Session, user: User) -> UsageResponse:
-    plan = get_plan_config(user.plan)
+    plan = resolve_plan(db, user.plan)
     snapshot = get_usage_snapshot(db, user)
     return UsageResponse(
         plan=plan.key,

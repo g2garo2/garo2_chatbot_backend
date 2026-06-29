@@ -8,14 +8,13 @@ from app.core.plans import (
     ACTIVE_SUBSCRIPTION_STATUSES,
     FREE_PLAN,
     PAID_PLANS,
-    PLAN_CONFIGS,
     SUBSCRIPTION_DOWNGRADE_STATUSES,
-    get_plan_config,
 )
 from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.billing import CreateSubscriptionResponse, VerifySubscriptionResponse
 from app.schemas.subscription import SubscriptionResponse
+from app.services.plan_service import resolve_plan
 from app.services.razorpay_service import create_customer, create_subscription, fetch_subscription, verify_subscription_signature
 
 
@@ -43,13 +42,13 @@ def _find_plan_from_razorpay_plan_id(razorpay_plan_id: str) -> str:
     return plan
 
 
-def build_subscription_response(user: User) -> SubscriptionResponse:
-    plan = get_plan_config(user.plan)
+def build_subscription_response(db: Session, user: User) -> SubscriptionResponse:
+    plan = resolve_plan(db, user.plan)
     return SubscriptionResponse(
         plan=plan.key,
-        plan_label=plan.label,
+        plan_label=plan.name,
         subscription_status=user.subscription_status,
-        price_inr=plan.price_inr,
+        price_inr=plan.price,
         razorpay_subscription_id=user.razorpay_subscription_id,
         razorpay_customer_id=user.razorpay_customer_id,
         subscription_start=user.subscription_start,
@@ -62,7 +61,7 @@ def create_user_subscription(db: Session, user: User, plan_key: str) -> CreateSu
     if plan_key not in PAID_PLANS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only paid plans can create Razorpay subscriptions")
 
-    plan = PLAN_CONFIGS[plan_key]
+    plan = resolve_plan(db, plan_key)
     if not user.razorpay_customer_id:
         customer = create_customer(user.name, user.email)
         user.razorpay_customer_id = customer.get("id")
@@ -76,11 +75,11 @@ def create_user_subscription(db: Session, user: User, plan_key: str) -> CreateSu
 
     return CreateSubscriptionResponse(
         plan=plan.key,
-        plan_label=plan.label,
+        plan_label=plan.name,
         razorpay_key_id=settings.razorpay_key_id,
         razorpay_subscription_id=subscription["id"],
         razorpay_customer_id=user.razorpay_customer_id,
-        amount_inr=plan.price_inr,
+        amount_inr=plan.price,
         status=subscription.get("status", "created"),
     )
 
@@ -123,7 +122,7 @@ def verify_user_subscription(
     payment = Payment(
         user_id=user.id,
         plan=plan,
-        amount_inr=get_plan_config(plan).price_inr,
+        amount_inr=resolve_plan(db, plan).price,
         provider="razorpay",
         status=subscription.get("status", "active"),
         razorpay_payment_id=payment_id,
@@ -165,7 +164,7 @@ def sync_subscription_from_webhook(db: Session, subscription_payload: dict) -> N
     payment = Payment(
         user_id=user.id,
         plan=user.plan,
-        amount_inr=get_plan_config(user.plan).price_inr,
+        amount_inr=resolve_plan(db, user.plan).price,
         provider="razorpay",
         status=status_value or "updated",
         razorpay_subscription_id=subscription_id,

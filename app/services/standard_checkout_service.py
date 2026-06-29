@@ -3,10 +3,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.plans import PAID_PLANS, get_plan_config
+from app.core.plans import PAID_PLANS
 from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.billing import CreateOrderResponse, VerifyPaymentResponse
+from app.services.plan_service import resolve_plan
 from app.services.razorpay_service import create_order, fetch_payment, verify_payment_signature
 
 
@@ -31,7 +32,7 @@ def create_standard_order(
     if normalized_plan:
         if normalized_plan not in PAID_PLANS:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported paid plan")
-        expected_amount = get_plan_config(normalized_plan).price_inr * 100
+        expected_amount = resolve_plan(db, normalized_plan).price * 100
         if amount != expected_amount:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount does not match the selected plan")
 
@@ -66,7 +67,7 @@ def verify_standard_payment(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This payment has already been processed")
 
     if normalized_plan in PAID_PLANS:
-        expected_amount = get_plan_config(normalized_plan).price_inr * 100
+        expected_amount = resolve_plan(db, normalized_plan).price * 100
         if int(payment_details.get("amount") or 0) != expected_amount:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Paid amount does not match the selected plan")
         user.plan = normalized_plan
@@ -78,7 +79,7 @@ def verify_standard_payment(
     payment = Payment(
         user_id=user.id,
         plan=normalized_plan or user.plan,
-        amount_inr=get_plan_config(normalized_plan or user.plan).price_inr,
+        amount_inr=resolve_plan(db, normalized_plan or user.plan).price,
         provider="razorpay",
         status="paid",
         razorpay_payment_id=payment_id,

@@ -17,12 +17,9 @@ from app.models.payment import Payment
 from app.models.usage_daily import UsageDaily
 from app.models.usage_monthly import UsageMonthly
 from app.models.user import User
-from app.schemas.admin import (
-    DefaultPromptResponse,
-    DefaultPromptUpdateRequest,
-    PromptSuggestionsResponse,
-    PromptSuggestionsUpdateRequest,
-)
+from app.schemas.admin import DefaultPromptResponse, DefaultPromptUpdateRequest, PromptSuggestionsResponse, PromptSuggestionsUpdateRequest
+from app.schemas.plan import SubscriptionPlanCreateRequest, SubscriptionPlanResponse, SubscriptionPlanUpdateRequest
+from app.services.plan_service import create_admin_plan, deactivate_admin_plan, list_admin_plans, update_admin_plan
 from app.services.prompt_settings_service import (
     get_default_prompt_setting,
     get_default_prompt_text,
@@ -65,7 +62,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       color: var(--text);
     }
     .shell {
-      width: min(1180px, calc(100vw - 32px));
+      width: min(1240px, calc(100vw - 32px));
       margin: 0 auto;
       padding: 24px 0 40px;
     }
@@ -89,6 +86,16 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       margin: 0;
       color: var(--muted);
       line-height: 1.6;
+    }
+    .hero-nav, .actions, .csv-list, .section-head, .table-actions, .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .section-head {
+      justify-content: space-between;
+      margin-bottom: 12px;
     }
     .grid {
       display: grid;
@@ -119,6 +126,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     }
     .panel {
       padding: 20px;
+      margin-bottom: 18px;
     }
     textarea {
       width: 100%;
@@ -136,22 +144,16 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       display: grid;
       gap: 12px;
     }
-    .prompt-suggestion-field {
+    .prompt-suggestion-field, .field {
       display: grid;
       gap: 8px;
     }
-    .prompt-suggestion-field label {
+    .prompt-suggestion-field label, .field label {
       color: var(--muted);
       font-size: 0.9rem;
     }
     .prompt-suggestion-field textarea {
       min-height: 112px;
-    }
-    .actions, .csv-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
     }
     button, .csv-link {
       border: 1px solid var(--border);
@@ -174,6 +176,22 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       color: var(--muted);
     }
     .status.error { color: var(--danger); }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.82rem;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+    }
+    .pill.yes {
+      color: #9cf4d0;
+      border-color: rgba(156, 244, 208, 0.28);
+    }
+    .pill.no {
+      color: var(--muted);
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -209,13 +227,48 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       background: linear-gradient(90deg, var(--accent), #7ce2cf);
     }
     .table-wrap { overflow-x: auto; }
+    .plan-modal-backdrop[hidden] { display: none; }
+    .plan-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 12, 18, 0.72);
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+    .plan-modal {
+      width: min(860px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--panel);
+      padding: 20px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .field.full {
+      grid-column: 1 / -1;
+    }
+    .field input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-soft);
+      color: var(--text);
+      padding: 12px 14px;
+      font: inherit;
+    }
     @media (max-width: 980px) {
-      .grid, .two-col { grid-template-columns: 1fr 1fr; }
+      .grid, .two-col, .field-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 720px) {
-      .shell { width: min(100vw - 20px, 1180px); padding-top: 14px; }
-      .grid, .two-col { grid-template-columns: 1fr; }
+      .shell { width: min(100vw - 20px, 1240px); padding-top: 14px; }
+      .grid, .two-col, .field-grid { grid-template-columns: 1fr; }
       .chart-row { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; }
     }
   </style>
 </head>
@@ -223,14 +276,51 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
   <div class="shell">
     <section class="hero">
       <h1>Garo2 Admin Dashboard</h1>
-      <p>Manage the Meghalaya starter suggestions, monitor website activity, and export live backend data as CSV.</p>
+      <p>Manage pricing, Meghalaya starter suggestions, monitor website activity, and export live backend data.</p>
       <p class="note">This page is served by the backend and reads directly from the production database tables.</p>
+      <div class="hero-nav">
+        <a class="csv-link" href="#subscription-plans">Subscription Plans</a>
+        <a class="csv-link" href="#prompt-manager">Prompt Suggestions</a>
+      </div>
     </section>
 
     <section class="grid" id="overview-grid"></section>
 
+    <section class="panel" id="subscription-plans">
+      <div class="section-head">
+        <div>
+          <h2 style="margin-bottom: 6px;">Subscription Plans</h2>
+          <p class="muted">These plans power the public pricing page and can be updated any time.</p>
+        </div>
+        <div class="table-actions">
+          <button class="primary" id="add-plan">Add Plan</button>
+          <button id="reload-plans">Reload Plans</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Plan name</th>
+              <th>Price</th>
+              <th>Billing cycle</th>
+              <th>Chat/day</th>
+              <th>Translation/day</th>
+              <th>AI provider</th>
+              <th>Button text</th>
+              <th>Active</th>
+              <th>Popular</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="subscription-plans-body"></tbody>
+        </table>
+      </div>
+      <p class="status" id="plans-status"></p>
+    </section>
+
     <section class="two-col">
-      <div class="panel">
+      <div class="panel" id="prompt-manager" style="margin-bottom: 0;">
         <h2>Suggested Chat Prompts</h2>
         <p class="muted">Manage the Meghalaya starter prompts shown above the chat input on small devices.</p>
         <div id="prompt-suggestion-fields" class="prompt-suggestion-fields"></div>
@@ -241,7 +331,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         <p class="status" id="prompt-status"></p>
       </div>
 
-      <div class="panel">
+      <div class="panel" style="margin-bottom: 0;">
         <h2>CSV Downloads</h2>
         <p class="muted">Export users, chats, messages, payments, and usage tables.</p>
         <div class="csv-list" id="csv-links"></div>
@@ -249,25 +339,25 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     </section>
 
     <section class="two-col">
-      <div class="panel">
+      <div class="panel" style="margin-bottom: 0;">
         <h2>Plan Distribution</h2>
         <div class="chart-list" id="plan-chart"></div>
       </div>
-      <div class="panel">
+      <div class="panel" style="margin-bottom: 0;">
         <h2>Output Language Distribution</h2>
         <div class="chart-list" id="language-chart"></div>
       </div>
     </section>
 
     <section class="two-col">
-      <div class="panel table-wrap">
+      <div class="panel table-wrap" style="margin-bottom: 0;">
         <h2>Recent Users</h2>
         <table>
           <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Created</th></tr></thead>
           <tbody id="recent-users"></tbody>
         </table>
       </div>
-      <div class="panel table-wrap">
+      <div class="panel table-wrap" style="margin-bottom: 0;">
         <h2>Recent Chats</h2>
         <table>
           <thead><tr><th>Title</th><th>User</th><th>Messages</th><th>Updated</th></tr></thead>
@@ -275,7 +365,66 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         </table>
       </div>
     </section>
+  </div>
 
+  <div class="plan-modal-backdrop" id="plan-modal-backdrop" hidden>
+    <div class="plan-modal">
+      <div class="section-head">
+        <div>
+          <h2 id="plan-modal-title" style="margin-bottom: 6px;">Edit Plan</h2>
+          <p class="muted">Update pricing, limits, copy, active status, and display order.</p>
+        </div>
+        <button id="close-plan-modal" type="button">Close</button>
+      </div>
+      <form id="plan-form">
+        <div class="field-grid">
+          <div class="field">
+            <label for="plan-key">Plan key</label>
+            <input id="plan-key" type="text" placeholder="plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-name">Plan name</label>
+            <input id="plan-name" type="text" placeholder="Plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-price">Price (INR)</label>
+            <input id="plan-price" type="number" min="0" required />
+          </div>
+          <div class="field">
+            <label for="plan-billing-cycle">Billing cycle</label>
+            <input id="plan-billing-cycle" type="text" placeholder="month" required />
+          </div>
+          <div class="field">
+            <label for="plan-chat-limit">Chat/day</label>
+            <input id="plan-chat-limit" type="number" min="0" placeholder="Leave empty for unlimited" />
+          </div>
+          <div class="field">
+            <label for="plan-translation-limit">Translation/day</label>
+            <input id="plan-translation-limit" type="number" min="0" required />
+          </div>
+          <div class="field full">
+            <label for="plan-ai-provider">AI provider text</label>
+            <textarea id="plan-ai-provider" required></textarea>
+          </div>
+          <div class="field full">
+            <label for="plan-button-text">Button text</label>
+            <input id="plan-button-text" type="text" placeholder="Pay for Plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-sort-order">Sort order</label>
+            <input id="plan-sort-order" type="number" required />
+          </div>
+          <div class="field full checkbox-row">
+            <label><input id="plan-is-active" type="checkbox" checked /> Active</label>
+            <label><input id="plan-is-popular" type="checkbox" /> Popular</label>
+          </div>
+        </div>
+        <div class="actions" style="margin-top: 16px;">
+          <button class="primary" type="submit">Save Plan</button>
+          <button id="cancel-plan" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -289,6 +438,26 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     const recentUsers = document.getElementById("recent-users");
     const recentChats = document.getElementById("recent-chats");
     const csvLinks = document.getElementById("csv-links");
+    const subscriptionPlansBody = document.getElementById("subscription-plans-body");
+    const plansStatus = document.getElementById("plans-status");
+    const addPlanButton = document.getElementById("add-plan");
+    const reloadPlansButton = document.getElementById("reload-plans");
+    const planModalBackdrop = document.getElementById("plan-modal-backdrop");
+    const closePlanModalButton = document.getElementById("close-plan-modal");
+    const cancelPlanButton = document.getElementById("cancel-plan");
+    const planModalTitle = document.getElementById("plan-modal-title");
+    const planForm = document.getElementById("plan-form");
+    const planKeyField = document.getElementById("plan-key");
+    const planNameField = document.getElementById("plan-name");
+    const planPriceField = document.getElementById("plan-price");
+    const planBillingCycleField = document.getElementById("plan-billing-cycle");
+    const planChatLimitField = document.getElementById("plan-chat-limit");
+    const planTranslationLimitField = document.getElementById("plan-translation-limit");
+    const planAiProviderField = document.getElementById("plan-ai-provider");
+    const planButtonTextField = document.getElementById("plan-button-text");
+    const planSortOrderField = document.getElementById("plan-sort-order");
+    const planIsActiveField = document.getElementById("plan-is-active");
+    const planIsPopularField = document.getElementById("plan-is-popular");
 
     const csvDatasets = [
       ["users", "Users"],
@@ -298,6 +467,8 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       ["usage-daily", "Usage Daily"],
       ["usage-monthly", "Usage Monthly"],
     ];
+
+    let editingPlanId = null;
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -313,6 +484,11 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value;
       return date.toLocaleString();
+    }
+
+    function formatPlanPrice(plan) {
+      const suffix = plan.price > 0 && plan.billing_cycle && plan.billing_cycle !== "free" ? `/${plan.billing_cycle}` : "";
+      return `Rs ${plan.price}${suffix}`;
     }
 
     function renderMetricCard(label, value, note) {
@@ -351,6 +527,105 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         .filter(Boolean);
     }
 
+    function renderFlag(value) {
+      return `<span class="pill ${value ? "yes" : "no"}">${value ? "Yes" : "No"}</span>`;
+    }
+
+    function openPlanModal(plan = null) {
+      editingPlanId = plan?.id ?? null;
+      planModalTitle.textContent = plan ? "Edit Plan" : "Add Plan";
+      planKeyField.value = plan?.plan_key ?? "";
+      planKeyField.disabled = Boolean(plan);
+      planNameField.value = plan?.name ?? "";
+      planPriceField.value = plan?.price ?? 0;
+      planBillingCycleField.value = plan?.billing_cycle ?? "month";
+      planChatLimitField.value = plan?.chat_limit ?? "";
+      planTranslationLimitField.value = plan?.translation_limit ?? 0;
+      planAiProviderField.value = plan?.ai_provider ?? "";
+      planButtonTextField.value = plan?.button_text ?? "";
+      planSortOrderField.value = plan?.sort_order ?? 0;
+      planIsActiveField.checked = plan ? Boolean(plan.is_active) : true;
+      planIsPopularField.checked = plan ? Boolean(plan.is_popular) : false;
+      planModalBackdrop.hidden = false;
+    }
+
+    function closePlanModal() {
+      editingPlanId = null;
+      planForm.reset();
+      planKeyField.disabled = false;
+      planModalBackdrop.hidden = true;
+    }
+
+    function readPlanForm() {
+      const chatLimitValue = planChatLimitField.value.trim();
+      return {
+        plan_key: planKeyField.value.trim().toLowerCase(),
+        name: planNameField.value.trim(),
+        price: Number(planPriceField.value),
+        billing_cycle: planBillingCycleField.value.trim(),
+        chat_limit: chatLimitValue === "" ? null : Number(chatLimitValue),
+        translation_limit: Number(planTranslationLimitField.value),
+        ai_provider: planAiProviderField.value.trim(),
+        button_text: planButtonTextField.value.trim(),
+        is_active: planIsActiveField.checked,
+        is_popular: planIsPopularField.checked,
+        sort_order: Number(planSortOrderField.value),
+      };
+    }
+
+    function renderPlans(plans) {
+      subscriptionPlansBody.innerHTML = plans.map((plan) => `
+        <tr>
+          <td>${escapeHtml(plan.name)}</td>
+          <td>${escapeHtml(formatPlanPrice(plan))}</td>
+          <td>${escapeHtml(plan.billing_cycle)}</td>
+          <td>${escapeHtml(plan.chat_limit == null ? "Unlimited with safe backend rate limit" : `${plan.chat_limit}/day`)}</td>
+          <td>${escapeHtml(`${plan.translation_limit}/day`)}</td>
+          <td>${escapeHtml(plan.ai_provider)}</td>
+          <td>${escapeHtml(plan.button_text)}</td>
+          <td>${renderFlag(Boolean(plan.is_active))}</td>
+          <td>${renderFlag(Boolean(plan.is_popular))}</td>
+          <td class="table-actions">
+            <button type="button" data-edit-plan="${plan.id}">Edit</button>
+            <button type="button" data-delete-plan="${plan.id}">Delete</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="10" class="muted">No plans found.</td></tr>`;
+
+      subscriptionPlansBody.querySelectorAll("[data-edit-plan]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const plan = plans.find((entry) => entry.id === Number(button.dataset.editPlan));
+          if (plan) {
+            openPlanModal(plan);
+          }
+        });
+      });
+
+      subscriptionPlansBody.querySelectorAll("[data-delete-plan]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const planId = Number(button.dataset.deletePlan);
+          if (!window.confirm("Delete will set this plan inactive on the pricing page. Continue?")) {
+            return;
+          }
+          plansStatus.textContent = "Updating plan status...";
+          plansStatus.className = "status";
+          try {
+            const response = await fetch(`/api/admin/plans/${planId}`, { method: "DELETE" });
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: "Could not delete the plan." }));
+              throw new Error(error.detail || "Could not delete the plan.");
+            }
+            await Promise.all([loadPlans(), loadDashboard()]);
+            plansStatus.textContent = "Plan updated successfully.";
+            plansStatus.className = "status";
+          } catch (error) {
+            plansStatus.textContent = error.message || "Could not delete the plan.";
+            plansStatus.className = "status error";
+          }
+        });
+      });
+    }
+
     async function loadPrompt() {
       const response = await fetch("/api/admin/prompt-suggestions");
       if (!response.ok) {
@@ -379,6 +654,57 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       renderPromptFields(data.prompts || []);
       promptStatus.textContent = `Prompts saved at ${formatDate(data.updated_at)}.`;
       promptStatus.className = "status";
+    }
+
+    async function loadPlans() {
+      const response = await fetch("/api/admin/plans");
+      if (!response.ok) {
+        throw new Error("Could not load subscription plans.");
+      }
+      const data = await response.json();
+      renderPlans(data);
+      plansStatus.textContent = `${data.length} plan(s) loaded.`;
+      plansStatus.className = "status";
+    }
+
+    async function savePlan(event) {
+      event.preventDefault();
+      const payload = readPlanForm();
+      if (!editingPlanId && !payload.plan_key) {
+        throw new Error("Plan key is required.");
+      }
+
+      const url = editingPlanId ? `/api/admin/plans/${editingPlanId}` : "/api/admin/plans";
+      const method = editingPlanId ? "PUT" : "POST";
+      const body = editingPlanId
+        ? {
+            name: payload.name,
+            price: payload.price,
+            billing_cycle: payload.billing_cycle,
+            chat_limit: payload.chat_limit,
+            translation_limit: payload.translation_limit,
+            ai_provider: payload.ai_provider,
+            button_text: payload.button_text,
+            is_active: payload.is_active,
+            is_popular: payload.is_popular,
+            sort_order: payload.sort_order,
+          }
+        : payload;
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Could not save the plan." }));
+        throw new Error(error.detail || "Could not save the plan.");
+      }
+
+      closePlanModal();
+      await Promise.all([loadPlans(), loadDashboard()]);
+      plansStatus.textContent = "Plan saved successfully.";
+      plansStatus.className = "status";
     }
 
     async function loadDashboard() {
@@ -419,7 +745,6 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
           <td>${escapeHtml(formatDate(chat.updated_at))}</td>
         </tr>
       `).join("") || `<tr><td colspan="4" class="muted">No chats yet.</td></tr>`;
-
     }
 
     function renderCsvLinks() {
@@ -431,10 +756,12 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     async function boot() {
       renderCsvLinks();
       try {
-        await Promise.all([loadPrompt(), loadDashboard()]);
+        await Promise.all([loadPrompt(), loadPlans(), loadDashboard()]);
       } catch (error) {
         promptStatus.textContent = error.message || "Could not load admin data.";
         promptStatus.className = "status error";
+        plansStatus.textContent = error.message || "Could not load admin data.";
+        plansStatus.className = "status error";
       }
     }
 
@@ -453,6 +780,31 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       } catch (error) {
         promptStatus.textContent = error.message || "Could not reload the prompts.";
         promptStatus.className = "status error";
+      }
+    });
+
+    addPlanButton.addEventListener("click", () => openPlanModal());
+    reloadPlansButton.addEventListener("click", async () => {
+      try {
+        await loadPlans();
+      } catch (error) {
+        plansStatus.textContent = error.message || "Could not reload plans.";
+        plansStatus.className = "status error";
+      }
+    });
+    closePlanModalButton.addEventListener("click", closePlanModal);
+    cancelPlanButton.addEventListener("click", closePlanModal);
+    planModalBackdrop.addEventListener("click", (event) => {
+      if (event.target === planModalBackdrop) {
+        closePlanModal();
+      }
+    });
+    planForm.addEventListener("submit", async (event) => {
+      try {
+        await savePlan(event);
+      } catch (error) {
+        plansStatus.textContent = error.message || "Could not save the plan.";
+        plansStatus.className = "status error";
       }
     });
 
@@ -547,6 +899,42 @@ def update_admin_prompt_suggestions(
         prompts=get_prompt_suggestions(db),
         updated_at=_to_iso(setting.updated_at),
     )
+
+
+@router.get("/api/admin/plans", response_model=list[SubscriptionPlanResponse], tags=["Admin"])
+def get_admin_plans_endpoint(
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> list[SubscriptionPlanResponse]:
+    return list_admin_plans(db)
+
+
+@router.post("/api/admin/plans", response_model=SubscriptionPlanResponse, tags=["Admin"])
+def create_plan_endpoint(
+    payload: SubscriptionPlanCreateRequest,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> SubscriptionPlanResponse:
+    return create_admin_plan(db, payload)
+
+
+@router.put("/api/admin/plans/{plan_id}", response_model=SubscriptionPlanResponse, tags=["Admin"])
+def update_plan_endpoint(
+    plan_id: int,
+    payload: SubscriptionPlanUpdateRequest,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> SubscriptionPlanResponse:
+    return update_admin_plan(db, plan_id, payload)
+
+
+@router.delete("/api/admin/plans/{plan_id}", response_model=SubscriptionPlanResponse, tags=["Admin"])
+def delete_plan_endpoint(
+    plan_id: int,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> SubscriptionPlanResponse:
+    return deactivate_admin_plan(db, plan_id)
 
 
 @router.get("/api/admin/dashboard", tags=["Admin"])

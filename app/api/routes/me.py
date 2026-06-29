@@ -18,5 +18,5 @@ def get_usage(current_user: User = Depends(get_current_user), db: Session = Depe
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)
-def get_subscription(current_user: User = Depends(get_current_user)) -> SubscriptionResponse:
-    return build_subscription_response(current_user)
+def get_subscription(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> SubscriptionResponse:
+    return build_subscription_response(db, current_user)

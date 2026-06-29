@@ -5,6 +5,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,6 +53,22 @@ class Settings(BaseSettings):
     cors_origins_raw: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
 
     jwt_algorithm: str = "HS256"
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        normalized_env = self.app_env.strip().lower()
+        is_production = normalized_env == "production"
+
+        if is_production and self.app_debug:
+            raise ValueError("APP_DEBUG must be false when APP_ENV=production")
+        if is_production and self.secret_key == "change-me-to-a-long-random-string":
+            raise ValueError("SECRET_KEY must be changed before production deployment")
+        if is_production and self.admin_password == "change-me-now":
+            raise ValueError("ADMIN_PASSWORD must be changed before production deployment")
+        if is_production and self.backend_base_url.startswith(("http://127.0.0.1", "http://localhost")):
+            raise ValueError("BACKEND_BASE_URL must be a public production URL when APP_ENV=production")
+
+        return self
 
     @field_validator(
         "openrouter_text_model",
