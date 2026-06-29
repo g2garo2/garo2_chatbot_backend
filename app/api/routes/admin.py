@@ -279,8 +279,8 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       <p>Manage pricing, Meghalaya starter suggestions, monitor website activity, and export live backend data.</p>
       <p class="note">This page is served by the backend and reads directly from the production database tables.</p>
       <div class="hero-nav">
-        <a class="csv-link" href="#subscription-plans">Subscription Plans</a>
-        <a class="csv-link" href="#prompt-manager">Prompt Suggestions</a>
+        <a class="csv-link" href="/admin/subscription-plans">Subscription Plans</a>
+        <a class="csv-link" href="/admin/prompt-suggestions">Prompt Suggestions</a>
       </div>
     </section>
 
@@ -815,6 +815,720 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
 """
 
 
+SUBSCRIPTION_PLANS_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Garo2 Admin - Subscription Plans</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a1520;
+      --panel: #102130;
+      --panel-soft: #14293b;
+      --border: rgba(183, 209, 223, 0.14);
+      --text: #edf5f7;
+      --muted: #90a9b7;
+      --accent: #2eb59c;
+      --danger: #ff7676;
+      font-family: "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(46, 181, 156, 0.18), transparent 28%),
+        linear-gradient(180deg, #09131d 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+    .hero, .panel {
+      border: 1px solid var(--border);
+      background: rgba(16, 33, 48, 0.9);
+      border-radius: 24px;
+      backdrop-filter: blur(10px);
+    }
+    .hero {
+      padding: 24px;
+      margin-bottom: 18px;
+      display: grid;
+      gap: 8px;
+    }
+    .hero-nav, .section-head, .table-actions, .actions, .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .section-head {
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .panel {
+      padding: 20px;
+    }
+    .muted {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    button, .nav-link {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: var(--panel-soft);
+      color: var(--text);
+      text-decoration: none;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), #226d85);
+      color: #07131c;
+      font-weight: 700;
+      border-color: transparent;
+    }
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+    }
+    .status.error { color: var(--danger); }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.82rem;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+    }
+    .pill.yes {
+      color: #9cf4d0;
+      border-color: rgba(156, 244, 208, 0.28);
+    }
+    .pill.no { color: var(--muted); }
+    .plan-modal-backdrop[hidden] { display: none; }
+    .plan-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 12, 18, 0.72);
+      display: grid;
+      place-items: center;
+      padding: 18px;
+    }
+    .plan-modal {
+      width: min(860px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--panel);
+      padding: 20px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field.full { grid-column: 1 / -1; }
+    .field label {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .field input, .field textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel-soft);
+      color: var(--text);
+      padding: 12px 14px;
+      font: inherit;
+    }
+    .field textarea { min-height: 120px; }
+    @media (max-width: 720px) {
+      .shell { width: min(100vw - 20px, 1180px); padding-top: 14px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1 style="margin:0;">Subscription Plans</h1>
+      <p class="muted">Manage plan pricing, limits, button text, active status, and display order from a dedicated admin page.</p>
+      <div class="hero-nav">
+        <a class="nav-link" href="/admin">Dashboard</a>
+        <a class="nav-link" href="/admin/prompt-suggestions">Prompt Suggestions</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2 style="margin:0 0 6px;">All Plans</h2>
+          <p class="muted">These plans power the public pricing page.</p>
+        </div>
+        <div class="table-actions">
+          <button class="primary" id="add-plan">Add Plan</button>
+          <button id="reload-plans">Reload Plans</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Plan name</th>
+              <th>Price</th>
+              <th>Billing cycle</th>
+              <th>Chat/day</th>
+              <th>Translation/day</th>
+              <th>AI provider</th>
+              <th>Button text</th>
+              <th>Active</th>
+              <th>Popular</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="subscription-plans-body"></tbody>
+        </table>
+      </div>
+      <p class="status" id="plans-status"></p>
+    </section>
+  </div>
+
+  <div class="plan-modal-backdrop" id="plan-modal-backdrop" hidden>
+    <div class="plan-modal">
+      <div class="section-head">
+        <div>
+          <h2 id="plan-modal-title" style="margin:0 0 6px;">Edit Plan</h2>
+          <p class="muted">Update pricing, limits, copy, active status, and display order.</p>
+        </div>
+        <button id="close-plan-modal" type="button">Close</button>
+      </div>
+      <form id="plan-form">
+        <div class="field-grid">
+          <div class="field">
+            <label for="plan-key">Plan key</label>
+            <input id="plan-key" type="text" placeholder="plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-name">Plan name</label>
+            <input id="plan-name" type="text" placeholder="Plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-price">Price (INR)</label>
+            <input id="plan-price" type="number" min="0" required />
+          </div>
+          <div class="field">
+            <label for="plan-billing-cycle">Billing cycle</label>
+            <input id="plan-billing-cycle" type="text" placeholder="month" required />
+          </div>
+          <div class="field">
+            <label for="plan-chat-limit">Chat/day</label>
+            <input id="plan-chat-limit" type="number" min="0" placeholder="Leave empty for unlimited" />
+          </div>
+          <div class="field">
+            <label for="plan-translation-limit">Translation/day</label>
+            <input id="plan-translation-limit" type="number" min="0" required />
+          </div>
+          <div class="field full">
+            <label for="plan-ai-provider">AI provider text</label>
+            <textarea id="plan-ai-provider" required></textarea>
+          </div>
+          <div class="field full">
+            <label for="plan-button-text">Button text</label>
+            <input id="plan-button-text" type="text" placeholder="Pay for Plus" required />
+          </div>
+          <div class="field">
+            <label for="plan-sort-order">Sort order</label>
+            <input id="plan-sort-order" type="number" required />
+          </div>
+          <div class="field full checkbox-row">
+            <label><input id="plan-is-active" type="checkbox" checked /> Active</label>
+            <label><input id="plan-is-popular" type="checkbox" /> Popular</label>
+          </div>
+        </div>
+        <div class="actions" style="margin-top: 16px;">
+          <button class="primary" type="submit">Save Plan</button>
+          <button id="cancel-plan" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const subscriptionPlansBody = document.getElementById("subscription-plans-body");
+    const plansStatus = document.getElementById("plans-status");
+    const addPlanButton = document.getElementById("add-plan");
+    const reloadPlansButton = document.getElementById("reload-plans");
+    const planModalBackdrop = document.getElementById("plan-modal-backdrop");
+    const closePlanModalButton = document.getElementById("close-plan-modal");
+    const cancelPlanButton = document.getElementById("cancel-plan");
+    const planModalTitle = document.getElementById("plan-modal-title");
+    const planForm = document.getElementById("plan-form");
+    const planKeyField = document.getElementById("plan-key");
+    const planNameField = document.getElementById("plan-name");
+    const planPriceField = document.getElementById("plan-price");
+    const planBillingCycleField = document.getElementById("plan-billing-cycle");
+    const planChatLimitField = document.getElementById("plan-chat-limit");
+    const planTranslationLimitField = document.getElementById("plan-translation-limit");
+    const planAiProviderField = document.getElementById("plan-ai-provider");
+    const planButtonTextField = document.getElementById("plan-button-text");
+    const planSortOrderField = document.getElementById("plan-sort-order");
+    const planIsActiveField = document.getElementById("plan-is-active");
+    const planIsPopularField = document.getElementById("plan-is-popular");
+    let editingPlanId = null;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function formatPlanPrice(plan) {
+      const suffix = plan.price > 0 && plan.billing_cycle && plan.billing_cycle !== "free" ? `/${plan.billing_cycle}` : "";
+      return `Rs ${plan.price}${suffix}`;
+    }
+
+    function renderFlag(value) {
+      return `<span class="pill ${value ? "yes" : "no"}">${value ? "Yes" : "No"}</span>`;
+    }
+
+    function openPlanModal(plan = null) {
+      editingPlanId = plan?.id ?? null;
+      planModalTitle.textContent = plan ? "Edit Plan" : "Add Plan";
+      planKeyField.value = plan?.plan_key ?? "";
+      planKeyField.disabled = Boolean(plan);
+      planNameField.value = plan?.name ?? "";
+      planPriceField.value = plan?.price ?? 0;
+      planBillingCycleField.value = plan?.billing_cycle ?? "month";
+      planChatLimitField.value = plan?.chat_limit ?? "";
+      planTranslationLimitField.value = plan?.translation_limit ?? 0;
+      planAiProviderField.value = plan?.ai_provider ?? "";
+      planButtonTextField.value = plan?.button_text ?? "";
+      planSortOrderField.value = plan?.sort_order ?? 0;
+      planIsActiveField.checked = plan ? Boolean(plan.is_active) : true;
+      planIsPopularField.checked = plan ? Boolean(plan.is_popular) : false;
+      planModalBackdrop.hidden = false;
+    }
+
+    function closePlanModal() {
+      editingPlanId = null;
+      planForm.reset();
+      planKeyField.disabled = false;
+      planModalBackdrop.hidden = true;
+    }
+
+    function readPlanForm() {
+      const chatLimitValue = planChatLimitField.value.trim();
+      return {
+        plan_key: planKeyField.value.trim().toLowerCase(),
+        name: planNameField.value.trim(),
+        price: Number(planPriceField.value),
+        billing_cycle: planBillingCycleField.value.trim(),
+        chat_limit: chatLimitValue === "" ? null : Number(chatLimitValue),
+        translation_limit: Number(planTranslationLimitField.value),
+        ai_provider: planAiProviderField.value.trim(),
+        button_text: planButtonTextField.value.trim(),
+        is_active: planIsActiveField.checked,
+        is_popular: planIsPopularField.checked,
+        sort_order: Number(planSortOrderField.value),
+      };
+    }
+
+    function renderPlans(plans) {
+      subscriptionPlansBody.innerHTML = plans.map((plan) => `
+        <tr>
+          <td>${escapeHtml(plan.name)}</td>
+          <td>${escapeHtml(formatPlanPrice(plan))}</td>
+          <td>${escapeHtml(plan.billing_cycle)}</td>
+          <td>${escapeHtml(plan.chat_limit == null ? "Unlimited with safe backend rate limit" : `${plan.chat_limit}/day`)}</td>
+          <td>${escapeHtml(`${plan.translation_limit}/day`)}</td>
+          <td>${escapeHtml(plan.ai_provider)}</td>
+          <td>${escapeHtml(plan.button_text)}</td>
+          <td>${renderFlag(Boolean(plan.is_active))}</td>
+          <td>${renderFlag(Boolean(plan.is_popular))}</td>
+          <td class="table-actions">
+            <button type="button" data-edit-plan="${plan.id}">Edit</button>
+            <button type="button" data-delete-plan="${plan.id}">Delete</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="10" class="muted">No plans found.</td></tr>`;
+
+      subscriptionPlansBody.querySelectorAll("[data-edit-plan]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const plan = plans.find((entry) => entry.id === Number(button.dataset.editPlan));
+          if (plan) {
+            openPlanModal(plan);
+          }
+        });
+      });
+
+      subscriptionPlansBody.querySelectorAll("[data-delete-plan]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const planId = Number(button.dataset.deletePlan);
+          if (!window.confirm("Delete will set this plan inactive on the pricing page. Continue?")) {
+            return;
+          }
+          plansStatus.textContent = "Updating plan status...";
+          plansStatus.className = "status";
+          try {
+            const response = await fetch(`/api/admin/plans/${planId}`, { method: "DELETE" });
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: "Could not delete the plan." }));
+              throw new Error(error.detail || "Could not delete the plan.");
+            }
+            await loadPlans();
+            plansStatus.textContent = "Plan updated successfully.";
+            plansStatus.className = "status";
+          } catch (error) {
+            plansStatus.textContent = error.message || "Could not delete the plan.";
+            plansStatus.className = "status error";
+          }
+        });
+      });
+    }
+
+    async function loadPlans() {
+      const response = await fetch("/api/admin/plans");
+      if (!response.ok) {
+        throw new Error("Could not load subscription plans.");
+      }
+      const data = await response.json();
+      renderPlans(data);
+      plansStatus.textContent = `${data.length} plan(s) loaded.`;
+      plansStatus.className = "status";
+    }
+
+    async function savePlan(event) {
+      event.preventDefault();
+      const payload = readPlanForm();
+      if (!editingPlanId && !payload.plan_key) {
+        throw new Error("Plan key is required.");
+      }
+
+      const url = editingPlanId ? `/api/admin/plans/${editingPlanId}` : "/api/admin/plans";
+      const method = editingPlanId ? "PUT" : "POST";
+      const body = editingPlanId
+        ? {
+            name: payload.name,
+            price: payload.price,
+            billing_cycle: payload.billing_cycle,
+            chat_limit: payload.chat_limit,
+            translation_limit: payload.translation_limit,
+            ai_provider: payload.ai_provider,
+            button_text: payload.button_text,
+            is_active: payload.is_active,
+            is_popular: payload.is_popular,
+            sort_order: payload.sort_order,
+          }
+        : payload;
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Could not save the plan." }));
+        throw new Error(error.detail || "Could not save the plan.");
+      }
+
+      closePlanModal();
+      await loadPlans();
+      plansStatus.textContent = "Plan saved successfully.";
+      plansStatus.className = "status";
+    }
+
+    addPlanButton.addEventListener("click", () => openPlanModal());
+    reloadPlansButton.addEventListener("click", async () => {
+      try {
+        await loadPlans();
+      } catch (error) {
+        plansStatus.textContent = error.message || "Could not reload plans.";
+        plansStatus.className = "status error";
+      }
+    });
+    closePlanModalButton.addEventListener("click", closePlanModal);
+    cancelPlanButton.addEventListener("click", closePlanModal);
+    planModalBackdrop.addEventListener("click", (event) => {
+      if (event.target === planModalBackdrop) {
+        closePlanModal();
+      }
+    });
+    planForm.addEventListener("submit", async (event) => {
+      try {
+        await savePlan(event);
+      } catch (error) {
+        plansStatus.textContent = error.message || "Could not save the plan.";
+        plansStatus.className = "status error";
+      }
+    });
+
+    loadPlans().catch((error) => {
+      plansStatus.textContent = error.message || "Could not load subscription plans.";
+      plansStatus.className = "status error";
+    });
+  </script>
+</body>
+</html>
+"""
+
+
+PROMPT_SUGGESTIONS_PAGE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Garo2 Admin - Prompt Suggestions</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a1520;
+      --panel: #102130;
+      --panel-soft: #14293b;
+      --border: rgba(183, 209, 223, 0.14);
+      --text: #edf5f7;
+      --muted: #90a9b7;
+      --accent: #2eb59c;
+      --danger: #ff7676;
+      font-family: "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(46, 181, 156, 0.18), transparent 28%),
+        linear-gradient(180deg, #09131d 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .shell {
+      width: min(980px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+    .hero, .panel {
+      border: 1px solid var(--border);
+      background: rgba(16, 33, 48, 0.9);
+      border-radius: 24px;
+      backdrop-filter: blur(10px);
+    }
+    .hero {
+      padding: 24px;
+      margin-bottom: 18px;
+      display: grid;
+      gap: 8px;
+    }
+    .hero-nav, .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .panel {
+      padding: 20px;
+    }
+    .muted {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    button, .nav-link {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: var(--panel-soft);
+      color: var(--text);
+      text-decoration: none;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), #226d85);
+      color: #07131c;
+      font-weight: 700;
+      border-color: transparent;
+    }
+    .status {
+      min-height: 22px;
+      color: var(--muted);
+    }
+    .status.error { color: var(--danger); }
+    .prompt-suggestion-fields {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .prompt-suggestion-field {
+      display: grid;
+      gap: 8px;
+    }
+    .prompt-suggestion-field label {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    textarea {
+      width: 100%;
+      min-height: 112px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel-soft);
+      color: var(--text);
+      padding: 14px 16px;
+      font: inherit;
+      line-height: 1.6;
+    }
+    @media (max-width: 720px) {
+      .shell { width: min(100vw - 20px, 980px); padding-top: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1 style="margin:0;">Prompt Suggestions</h1>
+      <p class="muted">Manage the suggested prompts shown above the chat input on small devices.</p>
+      <div class="hero-nav">
+        <a class="nav-link" href="/admin">Dashboard</a>
+        <a class="nav-link" href="/admin/subscription-plans">Subscription Plans</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 style="margin:0 0 6px;">Suggested Chat Prompts</h2>
+      <p class="muted">Update the Meghalaya starter prompts without editing frontend code.</p>
+      <div id="prompt-suggestion-fields" class="prompt-suggestion-fields"></div>
+      <div class="actions" style="margin-top: 14px;">
+        <button class="primary" id="save-prompt">Save Prompts</button>
+        <button id="reload-prompt">Reload</button>
+      </div>
+      <p class="status" id="prompt-status"></p>
+    </section>
+  </div>
+
+  <script>
+    const promptSuggestionFields = document.getElementById("prompt-suggestion-fields");
+    const promptStatus = document.getElementById("prompt-status");
+    const savePromptButton = document.getElementById("save-prompt");
+    const reloadPromptButton = document.getElementById("reload-prompt");
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }
+
+    function renderPromptFields(prompts) {
+      promptSuggestionFields.innerHTML = prompts.map((prompt, index) => `
+        <div class="prompt-suggestion-field">
+          <label for="prompt-suggestion-${index}">Prompt ${index + 1}</label>
+          <textarea id="prompt-suggestion-${index}" data-prompt-index="${index}">${escapeHtml(prompt)}</textarea>
+        </div>
+      `).join("");
+    }
+
+    function readPromptFields() {
+      return Array.from(promptSuggestionFields.querySelectorAll("textarea"))
+        .map((field) => field.value.trim())
+        .filter(Boolean);
+    }
+
+    async function loadPrompt() {
+      const response = await fetch("/api/admin/prompt-suggestions");
+      if (!response.ok) {
+        throw new Error("Could not load the suggested prompts.");
+      }
+      const data = await response.json();
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = data.updated_at ? `Last updated: ${formatDate(data.updated_at)}` : "Using default Meghalaya prompts.";
+      promptStatus.className = "status";
+    }
+
+    async function savePrompt() {
+      const prompts = readPromptFields();
+      promptStatus.textContent = "Saving prompts...";
+      promptStatus.className = "status";
+      const response = await fetch("/api/admin/prompt-suggestions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompts }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Could not save the prompts." }));
+        throw new Error(error.detail || "Could not save the prompts.");
+      }
+      const data = await response.json();
+      renderPromptFields(data.prompts || []);
+      promptStatus.textContent = `Prompts saved at ${formatDate(data.updated_at)}.`;
+      promptStatus.className = "status";
+    }
+
+    savePromptButton.addEventListener("click", async () => {
+      try {
+        await savePrompt();
+      } catch (error) {
+        promptStatus.textContent = error.message || "Could not save the prompts.";
+        promptStatus.className = "status error";
+      }
+    });
+
+    reloadPromptButton.addEventListener("click", async () => {
+      try {
+        await loadPrompt();
+      } catch (error) {
+        promptStatus.textContent = error.message || "Could not reload the prompts.";
+        promptStatus.className = "status error";
+      }
+    });
+
+    loadPrompt().catch((error) => {
+      promptStatus.textContent = error.message || "Could not load prompt suggestions.";
+      promptStatus.className = "status error";
+    });
+  </script>
+</body>
+</html>
+"""
+
+
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -854,6 +1568,18 @@ def _csv_response(filename: str, header: list[str], rows: list[list[object]]) ->
 @router.get("/api/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_page(_: str = Depends(get_admin_credentials)) -> HTMLResponse:
     return HTMLResponse(ADMIN_PAGE_HTML)
+
+
+@router.get("/admin/subscription-plans", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/api/admin/subscription-plans", response_class=HTMLResponse, include_in_schema=False)
+def subscription_plans_page(_: str = Depends(get_admin_credentials)) -> HTMLResponse:
+    return HTMLResponse(SUBSCRIPTION_PLANS_PAGE_HTML)
+
+
+@router.get("/admin/prompt-suggestions", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/api/admin/prompt-suggestions-page", response_class=HTMLResponse, include_in_schema=False)
+def prompt_suggestions_page(_: str = Depends(get_admin_credentials)) -> HTMLResponse:
+    return HTMLResponse(PROMPT_SUGGESTIONS_PAGE_HTML)
 
 
 @router.get("/api/admin/default-prompt", response_model=DefaultPromptResponse, tags=["Admin"])
