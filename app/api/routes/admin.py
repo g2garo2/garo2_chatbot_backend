@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.chat import Chat
+from app.models.feedback_request import FeedbackRequest
 from app.models.message import Message
 from app.models.payment import Payment
 from app.models.usage_daily import UsageDaily
@@ -20,6 +21,7 @@ from app.models.usage_monthly import UsageMonthly
 from app.models.user import User
 from app.schemas.account_deletion import AccountDeletionRequestResponse
 from app.schemas.admin import DefaultPromptResponse, DefaultPromptUpdateRequest, PromptSuggestionsResponse, PromptSuggestionsUpdateRequest
+from app.schemas.feedback import FeedbackRequestResponse
 from app.schemas.plan import SubscriptionPlanCreateRequest, SubscriptionPlanResponse, SubscriptionPlanUpdateRequest
 from app.services.plan_service import create_admin_plan, deactivate_admin_plan, list_admin_plans, update_admin_plan
 from app.services.prompt_settings_service import (
@@ -394,6 +396,34 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       </div>
       <p class="status" id="account-deletion-requests-status"></p>
     </section>
+
+    <section class="panel" id="feedback-requests">
+      <div class="section-head">
+        <div>
+          <h2 style="margin-bottom: 6px;">Feedback Requests</h2>
+          <p class="muted">Review product feedback, suggestions, and bug reports sent from the app settings page.</p>
+        </div>
+        <div class="table-actions">
+          <button id="reload-feedback-requests">Reload Feedback</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Type</th>
+              <th>Message</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="feedback-requests-body"></tbody>
+        </table>
+      </div>
+      <p class="status" id="feedback-requests-status"></p>
+    </section>
   </div>
 
   <div class="plan-modal-backdrop" id="plan-modal-backdrop" hidden>
@@ -471,8 +501,11 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     const plansStatus = document.getElementById("plans-status");
     const deletionRequestsBody = document.getElementById("account-deletion-requests-body");
     const deletionRequestsStatus = document.getElementById("account-deletion-requests-status");
+    const feedbackRequestsBody = document.getElementById("feedback-requests-body");
+    const feedbackRequestsStatus = document.getElementById("feedback-requests-status");
     const addPlanButton = document.getElementById("add-plan");
     const reloadDeletionRequestsButton = document.getElementById("reload-deletion-requests");
+    const reloadFeedbackRequestsButton = document.getElementById("reload-feedback-requests");
     const reloadPlansButton = document.getElementById("reload-plans");
     const planModalBackdrop = document.getElementById("plan-modal-backdrop");
     const closePlanModalButton = document.getElementById("close-plan-modal");
@@ -596,6 +629,45 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
           } catch (error) {
             deletionRequestsStatus.textContent = error.message || "Could not remove the request.";
             deletionRequestsStatus.className = "status error";
+          }
+        });
+      });
+    }
+
+    function renderFeedbackRequests(requests) {
+      feedbackRequestsBody.innerHTML = requests.map((request) => `
+        <tr>
+          <td>${escapeHtml(request.name)}</td>
+          <td>${escapeHtml(request.email)}</td>
+          <td>${escapeHtml(request.feedback_type)}</td>
+          <td>${escapeHtml(request.message)}</td>
+          <td>${escapeHtml(formatDate(request.created_at))}</td>
+          <td class="table-actions">
+            <button type="button" data-delete-feedback-request="${request.id}">Remove</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="6" class="muted">No feedback requests yet.</td></tr>`;
+
+      feedbackRequestsBody.querySelectorAll("[data-delete-feedback-request]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const requestId = Number(button.dataset.deleteFeedbackRequest);
+          if (!window.confirm("Remove this feedback request from the admin list?")) {
+            return;
+          }
+          feedbackRequestsStatus.textContent = "Removing feedback...";
+          feedbackRequestsStatus.className = "status";
+          try {
+            const response = await fetch(`/api/admin/feedback-requests/${requestId}`, { method: "DELETE" });
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: "Could not remove the feedback request." }));
+              throw new Error(error.detail || "Could not remove the feedback request.");
+            }
+            await loadFeedbackRequests();
+            feedbackRequestsStatus.textContent = "Feedback removed successfully.";
+            feedbackRequestsStatus.className = "status";
+          } catch (error) {
+            feedbackRequestsStatus.textContent = error.message || "Could not remove the feedback request.";
+            feedbackRequestsStatus.className = "status error";
           }
         });
       });
@@ -828,6 +900,17 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       deletionRequestsStatus.className = "status";
     }
 
+    async function loadFeedbackRequests() {
+      const response = await fetch("/api/admin/feedback-requests");
+      if (!response.ok) {
+        throw new Error("Could not load feedback requests.");
+      }
+      const data = await response.json();
+      renderFeedbackRequests(data);
+      feedbackRequestsStatus.textContent = `${data.length} feedback item(s) loaded.`;
+      feedbackRequestsStatus.className = "status";
+    }
+
     function renderCsvLinks() {
       csvLinks.innerHTML = csvDatasets.map(([key, label]) => `
         <a class="csv-link" href="/api/admin/exports/${key}" download>${escapeHtml(label)} CSV</a>
@@ -837,7 +920,7 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     async function boot() {
       renderCsvLinks();
       try {
-        await Promise.all([loadPrompt(), loadPlans(), loadDashboard(), loadDeletionRequests()]);
+        await Promise.all([loadPrompt(), loadPlans(), loadDashboard(), loadDeletionRequests(), loadFeedbackRequests()]);
       } catch (error) {
         promptStatus.textContent = error.message || "Could not load admin data.";
         promptStatus.className = "status error";
@@ -845,6 +928,8 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         plansStatus.className = "status error";
         deletionRequestsStatus.textContent = error.message || "Could not load admin data.";
         deletionRequestsStatus.className = "status error";
+        feedbackRequestsStatus.textContent = error.message || "Could not load admin data.";
+        feedbackRequestsStatus.className = "status error";
       }
     }
 
@@ -873,6 +958,14 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       } catch (error) {
         deletionRequestsStatus.textContent = error.message || "Could not reload account deletion requests.";
         deletionRequestsStatus.className = "status error";
+      }
+    });
+    reloadFeedbackRequestsButton.addEventListener("click", async () => {
+      try {
+        await loadFeedbackRequests();
+      } catch (error) {
+        feedbackRequestsStatus.textContent = error.message || "Could not reload feedback requests.";
+        feedbackRequestsStatus.className = "status error";
       }
     });
     reloadPlansButton.addEventListener("click", async () => {
@@ -1762,6 +1855,14 @@ def get_account_deletion_requests_endpoint(
     return db.query(AccountDeletionRequest).order_by(AccountDeletionRequest.created_at.desc()).all()
 
 
+@router.get("/api/admin/feedback-requests", response_model=list[FeedbackRequestResponse], tags=["Admin"])
+def get_feedback_requests_endpoint(
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> list[FeedbackRequestResponse]:
+    return db.query(FeedbackRequest).order_by(FeedbackRequest.created_at.desc()).all()
+
+
 @router.delete("/api/admin/account-deletion-requests/{request_id}", tags=["Admin"])
 def delete_account_deletion_request_endpoint(
     request_id: int,
@@ -1773,6 +1874,21 @@ def delete_account_deletion_request_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account deletion request not found.")
 
     db.delete(deletion_request)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.delete("/api/admin/feedback-requests/{request_id}", tags=["Admin"])
+def delete_feedback_request_endpoint(
+    request_id: int,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    feedback_request = db.get(FeedbackRequest, request_id)
+    if feedback_request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback request not found.")
+
+    db.delete(feedback_request)
     db.commit()
     return {"status": "deleted"}
 

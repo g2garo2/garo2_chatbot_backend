@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
-from app.models import account_deletion_request, app_setting, chat, message, payment, subscription_plan, usage_daily, usage_monthly, user  # noqa: F401
+from app.models import account_deletion_request, app_setting, chat, feedback_request, message, payment, subscription_plan, usage_daily, usage_monthly, user  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
