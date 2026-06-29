@@ -16,7 +16,7 @@
    - `RAZORPAY_PLAN_PRO`
    - `RAZORPAY_PLAN_ULTRA`
    - `RAZORPAY_WEBHOOK_SECRET`
-   - `BACKEND_BASE_URL=https://api.garo2.com`
+   - `BACKEND_BASE_URL=https://amptebmarak.blog`
    - `CORS_ORIGINS=https://garo2.com,https://www.garo2.com,https://admin.garo2.com`
 3. Keep `APP_ENV=production`.
 4. Keep `APP_DEBUG=false`.
@@ -27,7 +27,7 @@
 ## Frontend
 
 1. Set:
-   - `VITE_API_BASE_URL=https://api.garo2.com/api`
+   - `VITE_API_BASE_URL=https://amptebmarak.blog/api`
    - `VITE_GOOGLE_CLIENT_ID=...`
    - `VITE_RAZORPAY_KEY_ID=...`
 2. Run `npm install`.

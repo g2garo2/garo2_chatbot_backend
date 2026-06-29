@@ -98,7 +98,7 @@ Use the sample files in `deploy/` for `systemd` and Nginx.
 Frontend production env:
 
 ```env
-VITE_API_BASE_URL=https://api.garo2.com/api
+VITE_API_BASE_URL=https://amptebmarak.blog/api
 VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 VITE_RAZORPAY_KEY_ID=your-razorpay-key-id
 ```
