@@ -32,6 +32,14 @@ class ResolvedPlan:
     image_generation_monthly_limit: int
     features_note: str
 
+    @property
+    def chat_daily_limit(self) -> int | None:
+        return self.chat_limit
+
+    @property
+    def translation_daily_limit(self) -> int:
+        return self.translation_limit
+
 
 DEFAULT_PLAN_ROWS = [
     {
