@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.chat import Chat
 from app.models.message import Message
 from app.models.payment import Payment
 from app.models.usage_daily import UsageDaily
 from app.models.usage_monthly import UsageMonthly
 from app.models.user import User
+from app.schemas.account_deletion import AccountDeletionRequestResponse
 from app.schemas.admin import DefaultPromptResponse, DefaultPromptUpdateRequest, PromptSuggestionsResponse, PromptSuggestionsUpdateRequest
 from app.schemas.plan import SubscriptionPlanCreateRequest, SubscriptionPlanResponse, SubscriptionPlanUpdateRequest
 from app.services.plan_service import create_admin_plan, deactivate_admin_plan, list_admin_plans, update_admin_plan
@@ -365,6 +367,33 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
         </table>
       </div>
     </section>
+
+    <section class="panel" id="account-deletion-requests">
+      <div class="section-head">
+        <div>
+          <h2 style="margin-bottom: 6px;">Account Deletion Requests</h2>
+          <p class="muted">Review user deletion submissions and remove them after handling the request.</p>
+        </div>
+        <div class="table-actions">
+          <button id="reload-deletion-requests">Reload Requests</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Reason</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="account-deletion-requests-body"></tbody>
+        </table>
+      </div>
+      <p class="status" id="account-deletion-requests-status"></p>
+    </section>
   </div>
 
   <div class="plan-modal-backdrop" id="plan-modal-backdrop" hidden>
@@ -440,7 +469,10 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     const csvLinks = document.getElementById("csv-links");
     const subscriptionPlansBody = document.getElementById("subscription-plans-body");
     const plansStatus = document.getElementById("plans-status");
+    const deletionRequestsBody = document.getElementById("account-deletion-requests-body");
+    const deletionRequestsStatus = document.getElementById("account-deletion-requests-status");
     const addPlanButton = document.getElementById("add-plan");
+    const reloadDeletionRequestsButton = document.getElementById("reload-deletion-requests");
     const reloadPlansButton = document.getElementById("reload-plans");
     const planModalBackdrop = document.getElementById("plan-modal-backdrop");
     const closePlanModalButton = document.getElementById("close-plan-modal");
@@ -529,6 +561,44 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
 
     function renderFlag(value) {
       return `<span class="pill ${value ? "yes" : "no"}">${value ? "Yes" : "No"}</span>`;
+    }
+
+    function renderDeletionRequests(requests) {
+      deletionRequestsBody.innerHTML = requests.map((request) => `
+        <tr>
+          <td>${escapeHtml(request.name)}</td>
+          <td>${escapeHtml(request.email)}</td>
+          <td>${escapeHtml(request.reason)}</td>
+          <td>${escapeHtml(formatDate(request.created_at))}</td>
+          <td class="table-actions">
+            <button type="button" data-delete-deletion-request="${request.id}">Remove</button>
+          </td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" class="muted">No account deletion requests yet.</td></tr>`;
+
+      deletionRequestsBody.querySelectorAll("[data-delete-deletion-request]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const requestId = Number(button.dataset.deleteDeletionRequest);
+          if (!window.confirm("Remove this deletion request from the admin list?")) {
+            return;
+          }
+          deletionRequestsStatus.textContent = "Removing request...";
+          deletionRequestsStatus.className = "status";
+          try {
+            const response = await fetch(`/api/admin/account-deletion-requests/${requestId}`, { method: "DELETE" });
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ detail: "Could not remove the request." }));
+              throw new Error(error.detail || "Could not remove the request.");
+            }
+            await loadDeletionRequests();
+            deletionRequestsStatus.textContent = "Request removed successfully.";
+            deletionRequestsStatus.className = "status";
+          } catch (error) {
+            deletionRequestsStatus.textContent = error.message || "Could not remove the request.";
+            deletionRequestsStatus.className = "status error";
+          }
+        });
+      });
     }
 
     function openPlanModal(plan = null) {
@@ -747,6 +817,17 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
       `).join("") || `<tr><td colspan="4" class="muted">No chats yet.</td></tr>`;
     }
 
+    async function loadDeletionRequests() {
+      const response = await fetch("/api/admin/account-deletion-requests");
+      if (!response.ok) {
+        throw new Error("Could not load account deletion requests.");
+      }
+      const data = await response.json();
+      renderDeletionRequests(data);
+      deletionRequestsStatus.textContent = `${data.length} request(s) loaded.`;
+      deletionRequestsStatus.className = "status";
+    }
+
     function renderCsvLinks() {
       csvLinks.innerHTML = csvDatasets.map(([key, label]) => `
         <a class="csv-link" href="/api/admin/exports/${key}" download>${escapeHtml(label)} CSV</a>
@@ -756,12 +837,14 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     async function boot() {
       renderCsvLinks();
       try {
-        await Promise.all([loadPrompt(), loadPlans(), loadDashboard()]);
+        await Promise.all([loadPrompt(), loadPlans(), loadDashboard(), loadDeletionRequests()]);
       } catch (error) {
         promptStatus.textContent = error.message || "Could not load admin data.";
         promptStatus.className = "status error";
         plansStatus.textContent = error.message || "Could not load admin data.";
         plansStatus.className = "status error";
+        deletionRequestsStatus.textContent = error.message || "Could not load admin data.";
+        deletionRequestsStatus.className = "status error";
       }
     }
 
@@ -784,6 +867,14 @@ ADMIN_PAGE_HTML = """<!DOCTYPE html>
     });
 
     addPlanButton.addEventListener("click", () => openPlanModal());
+    reloadDeletionRequestsButton.addEventListener("click", async () => {
+      try {
+        await loadDeletionRequests();
+      } catch (error) {
+        deletionRequestsStatus.textContent = error.message || "Could not reload account deletion requests.";
+        deletionRequestsStatus.className = "status error";
+      }
+    });
     reloadPlansButton.addEventListener("click", async () => {
       try {
         await loadPlans();
@@ -1661,6 +1752,29 @@ def delete_plan_endpoint(
     db: Session = Depends(get_db),
 ) -> SubscriptionPlanResponse:
     return deactivate_admin_plan(db, plan_id)
+
+
+@router.get("/api/admin/account-deletion-requests", response_model=list[AccountDeletionRequestResponse], tags=["Admin"])
+def get_account_deletion_requests_endpoint(
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> list[AccountDeletionRequestResponse]:
+    return db.query(AccountDeletionRequest).order_by(AccountDeletionRequest.created_at.desc()).all()
+
+
+@router.delete("/api/admin/account-deletion-requests/{request_id}", tags=["Admin"])
+def delete_account_deletion_request_endpoint(
+    request_id: int,
+    _: str = Depends(get_admin_credentials),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    deletion_request = db.get(AccountDeletionRequest, request_id)
+    if deletion_request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account deletion request not found.")
+
+    db.delete(deletion_request)
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.get("/api/admin/dashboard", tags=["Admin"])

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, auth, billing, chat, health, image, me, payments, plans, translate, upload, webhooks
+from app.api.routes import account_deletion, admin, auth, billing, chat, health, image, me, payments, plans, translate, upload, webhooks
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 
@@ -30,6 +30,7 @@ def root() -> dict[str, str]:
 
 app.include_router(health.router, prefix=settings.api_v1_prefix, tags=["Health"])
 app.include_router(auth.router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Auth"])
+app.include_router(account_deletion.router, prefix=settings.api_v1_prefix, tags=["Account Deletion"])
 app.include_router(chat.router, prefix=f"{settings.api_v1_prefix}/chat", tags=["Chat"])
 app.include_router(translate.router, prefix=f"{settings.api_v1_prefix}/translate", tags=["Translate"])
 app.include_router(image.router, prefix=f"{settings.api_v1_prefix}/image", tags=["Image"])
