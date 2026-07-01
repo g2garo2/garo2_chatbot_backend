@@ -17,12 +17,12 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> Au
 
 @router.post("/register", response_model=AuthResponse)
 def register_auth(payload: EmailRegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    return register_with_email(db=db, name=payload.name, email=payload.email)
+    return register_with_email(db=db, name=payload.name, email=payload.email, password=payload.password)
 
 
 @router.post("/login", response_model=AuthResponse)
 def login_auth(payload: EmailLoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    return login_with_email(db=db, email=payload.email)
+    return login_with_email(db=db, email=payload.email, password=payload.password)
 
 
 @router.get("/me", response_model=UserResponse)

@@ -4,13 +4,15 @@ from fastapi import HTTPException, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from jose import jwt
-from sqlalchemy import or_
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.plans import FREE_PLAN
 from app.models.user import User
 from app.schemas.auth import AuthResponse
+
+password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(user_id: int) -> str:
@@ -25,10 +27,18 @@ def _auth_response_for_user(user: User) -> AuthResponse:
     return AuthResponse(access_token=create_access_token(user.id), user=user)
 
 
-def register_with_email(db: Session, name: str, email: str) -> AuthResponse:
+def hash_password(password: str) -> str:
+    return password_context.hash(password)
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return password_context.verify(password, password_hash)
+
+
+def register_with_email(db: Session, name: str, email: str, password: str) -> AuthResponse:
     normalized_name = name.strip()
     normalized_email = email.strip().lower()
-    existing_user = db.query(User).filter(or_(User.email == normalized_email, User.name == normalized_name)).first()
+    existing_user = db.query(User).filter(User.email == normalized_email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -39,6 +49,7 @@ def register_with_email(db: Session, name: str, email: str) -> AuthResponse:
         google_id=None,
         name=normalized_name,
         email=normalized_email,
+        password_hash=hash_password(password),
         avatar=None,
         plan=FREE_PLAN,
         subscription_status="free",
@@ -49,7 +60,7 @@ def register_with_email(db: Session, name: str, email: str) -> AuthResponse:
     return _auth_response_for_user(user)
 
 
-def login_with_email(db: Session, email: str) -> AuthResponse:
+def login_with_email(db: Session, email: str, password: str) -> AuthResponse:
     normalized_email = email.strip().lower()
     user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
@@ -57,6 +68,19 @@ def login_with_email(db: Session, email: str) -> AuthResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found. Please create an account first.",
         )
+
+    if not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account does not have a password yet. Continue with Google to sign in.",
+        )
+
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password.",
+        )
+
     return _auth_response_for_user(user)
 
 

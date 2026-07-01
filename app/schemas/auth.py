@@ -33,6 +33,7 @@ class AuthResponse(BaseModel):
 class EmailRegisterRequest(BaseModel):
     name: str
     email: EmailStr
+    password: str
 
     @field_validator("name")
     @classmethod
@@ -42,6 +43,23 @@ class EmailRegisterRequest(BaseModel):
             raise ValueError("Name is required")
         return normalized
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return normalized
+
 
 class EmailLoginRequest(BaseModel):
     email: EmailStr
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Password is required")
+        return normalized

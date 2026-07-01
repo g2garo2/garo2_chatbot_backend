@@ -117,11 +117,36 @@ def verify_user_subscription(
     if not verify_subscription_signature(payment_id, subscription_id, signature):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Razorpay signature")
 
+    if user.razorpay_subscription_id != subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subscription verification does not match your current upgrade session.",
+        )
+
+    if db.query(Payment).filter(Payment.razorpay_payment_id == payment_id).first():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This subscription payment has already been processed")
+
     subscription = fetch_subscription(subscription_id)
+    if subscription.get("id") != subscription_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fetched subscription does not match the submitted subscription")
+
+    if user.razorpay_customer_id and subscription.get("customer_id") and subscription.get("customer_id") != user.razorpay_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subscription verification does not belong to this user.",
+        )
+
+    resolved_plan = _find_plan_from_razorpay_plan_id(subscription.get("plan_id", ""))
+    if resolved_plan != plan:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Submitted plan does not match the verified Razorpay subscription.",
+        )
+
     _apply_subscription_to_user(user, subscription)
     payment = Payment(
         user_id=user.id,
-        plan=plan,
+        plan=resolved_plan,
         amount_inr=resolve_plan(db, plan).price,
         provider="razorpay",
         status=subscription.get("status", "active"),
