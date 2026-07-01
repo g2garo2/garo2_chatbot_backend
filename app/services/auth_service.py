@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from jose import jwt
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,20 +26,26 @@ def _auth_response_for_user(user: User) -> AuthResponse:
 
 
 def register_with_email(db: Session, name: str, email: str) -> AuthResponse:
+    normalized_name = name.strip()
     normalized_email = email.strip().lower()
-    user = db.query(User).filter(User.email == normalized_email).first()
-    if not user:
-        user = User(
-            google_id=None,
-            name=name.strip(),
-            email=normalized_email,
-            avatar=None,
-            plan=FREE_PLAN,
-            subscription_status="free",
+    existing_user = db.query(User).filter(or_(User.email == normalized_email, User.name == normalized_name)).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account already exists. Please log in.",
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+
+    user = User(
+        google_id=None,
+        name=normalized_name,
+        email=normalized_email,
+        avatar=None,
+        plan=FREE_PLAN,
+        subscription_status="free",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
     return _auth_response_for_user(user)
 
 
