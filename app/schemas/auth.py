@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class GoogleAuthRequest(BaseModel):
@@ -9,7 +9,7 @@ class GoogleAuthRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    google_id: str
+    google_id: str | None
     name: str
     email: EmailStr
     avatar: str | None
@@ -28,3 +28,20 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class EmailRegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Name is required")
+        return normalized
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr

@@ -20,32 +20,70 @@ def create_access_token(user_id: int) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
-def login_with_google(db: Session, credential: str) -> AuthResponse:
-    try:
-        token_info = id_token.verify_oauth2_token(credential, google_requests.Request(), settings.google_client_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential") from exc
-    google_id = token_info["sub"]
-    email = token_info["email"]
+def _auth_response_for_user(user: User) -> AuthResponse:
+    return AuthResponse(access_token=create_access_token(user.id), user=user)
 
-    user = db.query(User).filter(User.google_id == google_id).first()
+
+def register_with_email(db: Session, name: str, email: str) -> AuthResponse:
+    normalized_email = email.strip().lower()
+    user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
         user = User(
-            google_id=google_id,
-            name=token_info.get("name", email.split("@")[0]),
-            email=email,
-            avatar=token_info.get("picture"),
+            google_id=None,
+            name=name.strip(),
+            email=normalized_email,
+            avatar=None,
             plan=FREE_PLAN,
             subscription_status="free",
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    else:
-        user.name = token_info.get("name", user.name)
-        user.avatar = token_info.get("picture", user.avatar)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    return _auth_response_for_user(user)
 
-    return AuthResponse(access_token=create_access_token(user.id), user=user)
+
+def login_with_email(db: Session, email: str) -> AuthResponse:
+    normalized_email = email.strip().lower()
+    user = db.query(User).filter(User.email == normalized_email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found. Please create an account first.",
+        )
+    return _auth_response_for_user(user)
+
+
+def login_with_google(db: Session, credential: str) -> AuthResponse:
+    try:
+        token_info = id_token.verify_oauth2_token(credential, google_requests.Request(), settings.google_client_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential") from exc
+    google_id = token_info["sub"]
+    email = token_info["email"].strip().lower()
+
+    user = db.query(User).filter(User.google_id == google_id).first()
+    if not user:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                google_id=google_id,
+                name=token_info.get("name", email.split("@")[0]),
+                email=email,
+                avatar=token_info.get("picture"),
+                plan=FREE_PLAN,
+                subscription_status="free",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return _auth_response_for_user(user)
+
+    user.google_id = google_id
+    user.name = token_info.get("name", user.name)
+    user.avatar = token_info.get("picture", user.avatar)
+    user.email = email
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return _auth_response_for_user(user)
