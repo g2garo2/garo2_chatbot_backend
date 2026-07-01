@@ -2,6 +2,7 @@ import base64
 import logging
 import mimetypes
 import os
+import time
 from urllib.parse import urlparse
 
 import requests
@@ -11,7 +12,16 @@ from app.core.config import settings
 from app.models.message import Message
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+GEMINI_MAX_ATTEMPTS = 2
 logger = logging.getLogger(__name__)
+
+
+class GeminiUpstreamError(Exception):
+    def __init__(self, upstream_status: int, detail: str):
+        super().__init__(detail)
+        self.upstream_status = upstream_status
+        self.detail = detail
 
 
 def _resolve_image_data(image_url: str) -> tuple[str, str]:
@@ -29,20 +39,70 @@ def _resolve_image_data(image_url: str) -> tuple[str, str]:
     return base64.b64encode(response.content).decode("utf-8"), mime_type
 
 
-def _post_generate_content(model: str, payload: dict) -> dict:
+def _extract_error_detail(response: requests.Response) -> str:
+    try:
+        return response.json().get("error", {}).get("message", "Gemini request failed")
+    except ValueError:
+        return response.text or "Gemini request failed"
+
+
+def _post_generate_content_once(model: str, payload: dict) -> dict:
     if not settings.gemini_api_key:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Gemini API key is not configured")
 
     url = f"{GEMINI_API_BASE}/{model}:generateContent?key={settings.gemini_api_key}"
     response = requests.post(url, json=payload, timeout=120)
     if response.status_code >= 400:
-        try:
-            detail = response.json().get("error", {}).get("message", "Gemini request failed")
-        except ValueError:
-            detail = response.text or "Gemini request failed"
-        logger.error("Gemini request failed with %s for model %s: %s", response.status_code, model, detail)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+        detail = _extract_error_detail(response)
+        raise GeminiUpstreamError(response.status_code, detail)
     return response.json()
+
+
+def _post_generate_content(model: str, payload: dict, fallback_model: str = "") -> dict:
+    models_to_try = [model]
+    if fallback_model and fallback_model != model:
+        models_to_try.append(fallback_model)
+
+    last_detail = "Gemini service is temporarily unavailable. Please try again later."
+    for candidate_model in models_to_try:
+        for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
+            try:
+                return _post_generate_content_once(candidate_model, payload)
+            except requests.exceptions.Timeout:
+                last_detail = "Gemini request timed out. Please try again."
+                logger.warning(
+                    "Gemini timeout for model %s on attempt %s/%s",
+                    candidate_model,
+                    attempt,
+                    GEMINI_MAX_ATTEMPTS,
+                )
+            except requests.exceptions.RequestException as exc:
+                last_detail = "Unable to reach Gemini service. Please try again."
+                logger.warning(
+                    "Gemini network error for model %s on attempt %s/%s: %s",
+                    candidate_model,
+                    attempt,
+                    GEMINI_MAX_ATTEMPTS,
+                    exc,
+                )
+            except GeminiUpstreamError as exc:
+                last_detail = exc.detail
+                logger.warning(
+                    "Gemini request failed for model %s on attempt %s/%s: %s",
+                    candidate_model,
+                    attempt,
+                    GEMINI_MAX_ATTEMPTS,
+                    last_detail,
+                )
+                if exc.upstream_status not in GEMINI_RETRYABLE_STATUS_CODES:
+                    break
+
+            if attempt < GEMINI_MAX_ATTEMPTS:
+                time.sleep(1.5 * attempt)
+
+        logger.error("Gemini exhausted attempts for model %s", candidate_model)
+
+    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=last_detail)
 
 
 def _extract_text(data: dict) -> str:
@@ -103,7 +163,11 @@ def generate_chat_response(messages: list[Message], input_language: str, output_
             parts.append({"inline_data": {"mime_type": mime_type, "data": image_data}})
         contents.append({"role": "model" if message.role == "assistant" else "user", "parts": parts})
 
-    data = _post_generate_content(settings.gemini_text_model, {"contents": contents})
+    data = _post_generate_content(
+        settings.gemini_text_model,
+        {"contents": contents},
+        fallback_model=settings.gemini_text_fallback_model,
+    )
     return _extract_text(data)
 
 
@@ -129,7 +193,11 @@ def translate_text(text: str, source_language: str, target_language: str) -> str
             }
         ]
     }
-    data = _post_generate_content(settings.gemini_text_model, payload)
+    data = _post_generate_content(
+        settings.gemini_text_model,
+        payload,
+        fallback_model=settings.gemini_text_fallback_model,
+    )
     return _extract_text(data)
 
 

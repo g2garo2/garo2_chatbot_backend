@@ -10,6 +10,7 @@
    - `GOOGLE_CLIENT_ID`
    - `OPENROUTER_API_KEY`
    - `GEMINI_API_KEY`
+   - `GEMINI_TEXT_FALLBACK_MODEL=gemini-2.5-flash`
    - `RAZORPAY_KEY_ID`
    - `RAZORPAY_KEY_SECRET`
    - `RAZORPAY_PLAN_PLUS`
@@ -17,7 +18,7 @@
    - `RAZORPAY_PLAN_ULTRA`
    - `RAZORPAY_WEBHOOK_SECRET`
    - `BACKEND_BASE_URL=https://amptebmarak.blog`
-   - `CORS_ORIGINS=https://garo2.com,https://www.garo2.com,https://admin.garo2.com`
+   - `CORS_ORIGINS=https://ai.garo2.com,http://localhost:5173,http://localhost:3000`
 3. Keep `APP_ENV=production`.
 4. Keep `APP_DEBUG=false`.
 5. Run `alembic upgrade head`.

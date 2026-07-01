@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     openrouter_site_name: str = Field(default="Garo2", alias="OPENROUTER_SITE_NAME")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_text_model: str = Field(default="gemini-3.5-flash", alias="GEMINI_TEXT_MODEL")
+    gemini_text_fallback_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_TEXT_FALLBACK_MODEL")
     gemini_image_model: str = Field(default="gemini-2.5-flash-image-preview", alias="GEMINI_IMAGE_MODEL")
     razorpay_key_id: str = Field(default="", alias="RAZORPAY_KEY_ID")
     razorpay_key_secret: str = Field(default="", alias="RAZORPAY_KEY_SECRET")
@@ -75,6 +76,7 @@ class Settings(BaseSettings):
         "openrouter_free_model",
         "openrouter_vision_model",
         "gemini_text_model",
+        "gemini_text_fallback_model",
         "gemini_image_model",
         mode="before",
     )
